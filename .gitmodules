@@ -1,0 +1,9 @@
+[submodule "drake"]
+	path = drake
+	url = https://github.com/gizatt/drake
+[submodule "drc_core_utils"]
+	path = drc_core_utils
+	url = https://github.com/gizatt/drc_core_utils
+[submodule "pcl"]
+	path = pcl
+	url = https://github.com/pointcloudlibrary/pcl

@@ -46,3 +46,12 @@ ExternalProject_Add(drc_core_utils
 	INSTALL_DIR ${CMAKE_BINARY_DIR}
 	INSTALL_COMMAND make install
 	DEPENDS drake)
+
+set(CMAKE_INSTALL_PREFIX ${CMAKE_BINARY_DIR})
+set(CMAKE_BUILD_TYPE "Debug")
+set(CMAKE_PROJECT_object_detection_INCLUDE ${CMAKE_SOURCE_DIR}/fix_include_dir.cmake)
+include_directories (${CMAKE_BINARY_DIR})
+include_directories (${CMAKE_BINARY_DIR}/include)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+
+add_subdirectory(src)

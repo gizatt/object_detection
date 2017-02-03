@@ -7,3 +7,6 @@
 [submodule "pcl"]
 	path = pcl
 	url = https://github.com/pointcloudlibrary/pcl
+[submodule "libfreenect2"]
+	path = libfreenect2
+	url = https://github.com/ChristopherSweeney/libfreenect2.git

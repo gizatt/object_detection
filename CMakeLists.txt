@@ -2,23 +2,16 @@ cmake_minimum_required(VERSION 3.5)
 project(object_detection)
 include(ExternalProject)
 
-ExternalProject_Add(pcl
-	PREFIX ${CMAKE_BINARY_DIR}
-	CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_BINARY_DIR}
-	SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/pcl
-	UPDATE_COMMAND ""
-	INSTALL_COMMAND ""
-)
 if(NOT USE_SYSTEM_PCL)
-  set(pcl_proj pcl)
-  set(pcl_url http://github.com/pointcloudlibrary/pcl.git)
-  #set(pcl_revision pcl-1.7.2) # this version introduces some missing openni pkg-config file bug
-  set(pcl_revision pcl-1.7.1)
-  set(pcl_depends flann Eigen_pod)
-  set(pcl_external_args
-    CMAKE_CACHE_ARGS
-      ${default_cmake_args}
-    )
+	ExternalProject_Add(pcl
+		PREFIX ${CMAKE_BINARY_DIR}
+		CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_BINARY_DIR}
+		SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/pcl
+		UPDATE_COMMAND ""
+		INSTALL_COMMAND make install
+	)
+else()
+  find_package(PCL 1.7 REQUIRED)
 endif()
 
 ExternalProject_Add(drake
@@ -47,11 +40,11 @@ ExternalProject_Add(drc_core_utils
 	INSTALL_COMMAND make install
 	DEPENDS drake)
 
-set(CMAKE_INSTALL_PREFIX ${CMAKE_BINARY_DIR})
-set(CMAKE_BUILD_TYPE "Debug")
-set(CMAKE_PROJECT_object_detection_INCLUDE ${CMAKE_SOURCE_DIR}/fix_include_dir.cmake)
-include_directories (${CMAKE_BINARY_DIR})
-include_directories (${CMAKE_BINARY_DIR}/include)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-
-add_subdirectory(src)
+ExternalProject_Add(object_detection
+	PREFIX ${CMAKE_BINARY_DIR}
+	CMAKE_ARGS -DCMAKE_PROJECT_object_detection_INCLUDE:PATH=${CMAKE_SOURCE_DIR}/fix_include_dir.cmake
+	CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_BINARY_DIR} -DCMAKE_BUILD_TYPE:STRING=Debug
+	SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src
+	UPDATE_COMMAND ""
+	INSTALL_COMMAND make install 
+	DEPENDS drake pcl)

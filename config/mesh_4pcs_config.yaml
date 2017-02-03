@@ -1,5 +1,5 @@
 options:
-  num_point_quads: 10
+  num_point_quads: 2
   
   # Scene sampling mode 0 = center of each face
   # scene sampling mode 1 = num_rays surface points randomly uniformly across faces of specified model, or all of them (don't specify model)
@@ -10,9 +10,9 @@ options:
   sample_model: 0  
 
   gurobi_int_options:
-    #MIPFocus: 1
-    PoolSearchMode: 2
-    PoolSolutions: 20
+    MIPFocus: 1
+    #PoolSearchMode: 2
+    #PoolSolutions: 20
 
   gurobi_float_options:
     TimeLimit: 3600

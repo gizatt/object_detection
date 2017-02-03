@@ -76,6 +76,9 @@ MatrixXd boundingBox2FaceSel(Matrix3Xd bb_pts){
 Vector3d pointToVector3d(PointType & point){
   return Vector3d(point.x, point.y, point.z);
 }
+PointType Vector3dToPoint(Vector3d & vec){
+  return PointType(vec(0), vec(1), vec(2));
+}
 
 vector< vector<Vector3d> > boundingBox2QuadMesh(MatrixXd bb_pts){
   // order in:
@@ -229,6 +232,8 @@ int main(int argc, char** argv) {
   if (!lcm->good()) {
     throw std::runtime_error("LCM is not good");
   }
+
+  pcl::visualization::PCLVisualizer viewer ("Point Collection");
 
   // Set up robot
   string yamlString = string(argv[1]);
@@ -434,23 +439,16 @@ int main(int argc, char** argv) {
   }
   printf("\n");
 
-/*
   // See https://www.sharelatex.com/project/5850590c38884b7c6f6aedd1
   // for problem formulation
   MathematicalProgram prog;
-
-  // Allocate slacks to choose minimum L-1 norm over objects
-  auto phi = prog.NewContinuousVariables(scene_pts->size(), 1, "phi");
   
-  // And slacks to store term-wise absolute value terms for L-1 norm calculation
-  auto alpha = prog.NewContinuousVariables(3, scene_pts->size(), "alpha");
-
   // Each row is a set of affine coefficients relating the scene point to a combination
   // of vertices on a single face of the model
-  auto C = prog.NewContinuousVariables(optNumPointQuads*4, vertices.cols(), "C");
+  auto C = prog.NewContinuousVariables(scene_pts->size(), vertices.cols(), "C");
   
   // Binary variable selects which face is being corresponded to by each point in each point quad
-  auto f = prog.NewBinaryVariables(optNumPointQuads*4, F.rows(),"f");
+  auto f = prog.NewBinaryVariables(scene_pts->size(), F.rows(),"f");
 
   // Constrain each row of C to sum to 1 if a face is selected, to make them proper
   // affine coefficients
@@ -466,11 +464,7 @@ int main(int argc, char** argv) {
   // one face to correspond to
   Eigen::MatrixXd f1 = Eigen::MatrixXd::Ones(1, f.cols());
   for (size_t k=0; k<f.rows(); k++){
-    if (optAllowOutliers){
-      prog.AddLinearConstraint(f1, 0, 1, f.row(k).transpose()); 
-    } else {
-      prog.AddLinearEqualityConstraint(f1, 1, f.row(k).transpose());
-    }
+    prog.AddLinearEqualityConstraint(f1, 1, f.row(k).transpose());
   }
 
   // Force all elems of C nonnegative
@@ -503,88 +497,44 @@ int main(int argc, char** argv) {
   prog.AddLinearEqualityConstraint(Eigen::MatrixXd::Ones(1, 1), Eigen::MatrixXd::Zero(1, 1), C_dummy);
 
   printf("Starting to add correspondence costs... ");
-  for (int l=0; l<models.size(); l++){
-    for (int i=0; i<num_point_quads; i++){
-      printf("=");
+  for (int i=0; i<optNumPointQuads; i++){
+    printf("=");
 
-      // constrain L-1 distance slack based on correspondences
-      // phi_i >= 1^T alpha_{i}
-      // phi_i - 1&T alpha_{i} >= 0
-      RowVectorXd PhiConstr(1 + 3);
-      PhiConstr.setZero();
-      PhiConstr(0, 0) = 1.0; // multiplies phi
-      PhiConstr.block<1,3>(0,1) = -RowVector3d::Ones(); // multiplies alpha
-      prog.AddLinearConstraint(PhiConstr, 0, std::numeric_limits<double>::infinity(),
-      {phi.block<1,1>(i, 0),
-       alpha.col(i)});
+    double r_1 = point_quads[i].r_1;
+    double r_2 = point_quads[i].r_2;
 
-      // If we're allowing outliers, we need to constrain each phi_i to be bigger than
-      // a penalty amount if no faces are selected
-      if (optAllowOutliers){
-        // phi_i >= phi_max - (ones * f_i)*BIG
-        // -> phi_ + (ones * f_i)*BIG >= phi_max
-        Eigen::MatrixXd A_phimax = Eigen::MatrixXd::Ones(1, f.cols() + 1);
-        A_phimax.block(0, 0, 1, f.cols()) = Eigen::MatrixXd::Ones(1, f.cols())*kBigNumber;
-        for (size_t k=0; k<f.rows(); k++){
-          prog.AddLinearConstraint(A_phimax, optPhiMax, std::numeric_limits<double>::infinity(), {f.row(k).transpose(), phi.row(k)});
-        }
-      }
+    printf("TODO(gizatt): this fails because if a = b and c = d, the cost goes to zero.\n");
+    
+    // want to constraint
+    // min || ( (1 - r_1) * C_a a + (r_1) C_b b) - ( (1 - r_2) * C_d c + (r_2) C_d d ) ||_2^2
+    // which we'll separate out to x, y, and z components to make writing it out easier
 
-      // Alphaconstr, containing the scene and model points and a translation bias term, is used the constraints
-      // on the three elems of alpha_{i, l}
-      auto s_xyz = Eigen::Vector3d(scene_pts->at(i).x, scene_pts->at(i).y, scene_pts->at(i).z);
-      AlphaConstrPos.block<1, 3>(0, 1) = -s_xyz.transpose(); // Multiples R
-      AlphaConstrNeg.block<1, 3>(0, 1) = s_xyz.transpose(); // Multiples R
-
-      AlphaConstrPos.block(0, 5, 1, vertices.cols()) = 1.0 * vertices.row(0); // multiplies the selection vars
-      prog.AddLinearConstraint(AlphaConstrPos, -kBigNumber, std::numeric_limits<double>::infinity(),
-        {alpha.block<1,1>(0, i),
-         transform_by_object[l].R.block<1, 3>(0, 0).transpose(), 
-         transform_by_object[l].T.block<1,1>(0,0),
-         C.row(i).transpose(),
-         f.row(i).transpose()});
-
-      AlphaConstrPos.block(0, 5, 1, vertices.cols()) = 1.0 * vertices.row(1); // multiplies the selection vars
-      prog.AddLinearConstraint(AlphaConstrPos, -kBigNumber, std::numeric_limits<double>::infinity(),
-        {alpha.block<1,1>(1, i),
-         transform_by_object[l].R.block<1, 3>(1, 0).transpose(), 
-         transform_by_object[l].T.block<1,1>(1,0),
-         C.row(i).transpose(),
-         f.row(i).transpose()});
-
-      AlphaConstrPos.block(0, 5, 1, vertices.cols()) = 1.0 * vertices.row(2); // multiplies the selection vars
-      prog.AddLinearConstraint(AlphaConstrPos, -kBigNumber, std::numeric_limits<double>::infinity(),
-        {alpha.block<1,1>(2, i),
-         transform_by_object[l].R.block<1, 3>(2, 0).transpose(), 
-         transform_by_object[l].T.block<1,1>(2,0),
-         C.row(i).transpose(),
-         f.row(i).transpose()});
-
-      AlphaConstrNeg.block(0, 5, 1, vertices.cols()) = -1.0 * vertices.row(0); // multiplies the selection vars
-      prog.AddLinearConstraint(AlphaConstrNeg, -kBigNumber, std::numeric_limits<double>::infinity(),
-        {alpha.block<1,1>(0, i),
-         transform_by_object[l].R.block<1, 3>(0, 0).transpose(), 
-         transform_by_object[l].T.block<1,1>(0,0),
-         C.row(i).transpose(),
-         f.row(i).transpose()});
-      AlphaConstrNeg.block(0, 5, 1, vertices.cols()) = -1.0 * vertices.row(1); // multiplies the selection vars
-      prog.AddLinearConstraint(AlphaConstrNeg, -kBigNumber, std::numeric_limits<double>::infinity(),
-        {alpha.block<1,1>(1, i),
-         transform_by_object[l].R.block<1, 3>(1, 0).transpose(), 
-         transform_by_object[l].T.block<1,1>(1,0),
-         C.row(i).transpose(),
-         f.row(i).transpose()});
-      AlphaConstrNeg.block(0, 5, 1, vertices.cols()) = -1.0 * vertices.row(2); // multiplies the selection vars
-      prog.AddLinearConstraint(AlphaConstrNeg, -kBigNumber, std::numeric_limits<double>::infinity(),
-        {alpha.block<1,1>(2, i),
-         transform_by_object[l].R.block<1, 3>(2, 0).transpose(), 
-         transform_by_object[l].T.block<1,1>(2,0),
-         C.row(i).transpose(),
-         f.row(i).transpose()});
+    // simplifying to || B x ||_2^2, x = [C_a; C_b; C_c; C_d]
+    //                               B = [(1-r_1) V_x, r_1 V_x, -(1-r_2) V_x, -r_2 V_x]
+    MatrixXd B_x(1, total_num_verts + total_num_verts + total_num_verts + total_num_verts);
+    MatrixXd B_y(1, total_num_verts + total_num_verts + total_num_verts + total_num_verts);
+    MatrixXd B_z(1, total_num_verts + total_num_verts + total_num_verts + total_num_verts);
+    double coeffs[4] = {1-r_1, r_1, -(1-r_2), -r_2};
+    for (int k=0; k<4; k++){
+      B_x.block(0, k*total_num_verts, 1, total_num_verts) = coeffs[k]*vertices.row(0);
+      B_y.block(0, k*total_num_verts, 1, total_num_verts) = coeffs[k]*vertices.row(1);
+      B_z.block(0, k*total_num_verts, 1, total_num_verts) = coeffs[k]*vertices.row(2);
     }
+
+    prog.AddQuadraticCost( B_x.transpose() * B_x, MatrixXd::Zero(1, 1), {C.row(point_quads[i].ind_a), 
+                                                                         C.row(point_quads[i].ind_b), 
+                                                                         C.row(point_quads[i].ind_c), 
+                                                                         C.row(point_quads[i].ind_d)});
+    prog.AddQuadraticCost( B_y.transpose() * B_y, MatrixXd::Zero(1, 1), {C.row(point_quads[i].ind_a), 
+                                                                         C.row(point_quads[i].ind_b), 
+                                                                         C.row(point_quads[i].ind_c), 
+                                                                         C.row(point_quads[i].ind_d)});
+    prog.AddQuadraticCost( B_z.transpose() * B_z, MatrixXd::Zero(1, 1), {C.row(point_quads[i].ind_a), 
+                                                                         C.row(point_quads[i].ind_b), 
+                                                                         C.row(point_quads[i].ind_c), 
+                                                                         C.row(point_quads[i].ind_d)});
   }
   printf("\n");
-
   double now = getUnixTime();
 
   GurobiSolver gurobi_solver;
@@ -616,6 +566,7 @@ int main(int argc, char** argv) {
 //  prog.SetSolverOption("GUROBI", "TuneResults", 3);
   //prog.SetSolverOption("GUROBI", )
 
+
   auto out = gurobi_solver.Solve(prog);
   string problem_string = "rigidtf";
   double elapsed = getUnixTime() - now;
@@ -625,33 +576,26 @@ int main(int argc, char** argv) {
   //prog.PrintSolution();
   printf("Code %d, problem %s solved for %lu scene solved in: %f\n", out, problem_string.c_str(), scene_pts->size(), elapsed);
 
-
   // Extract into a set of correspondences
-  struct PointCorrespondence {
-    PointType scene_pt;
-    PointType model_pt;
-    std::vector<PointType> model_verts;
-    std::vector<double> vert_weights;
-
-    // for reference into optim program
-    int scene_ind;
-    int face_ind;
-    std::vector<int> vert_inds;
+  struct PointQuadCorrespondence {
+    PointQuad scene_quad;
+    std::vector<Vector3d> est_model_points;
+    std::vector<int> model_faces; // corresponded model faces and verts in order for pts a, b, c, d
+    std::vector<std::vector<int>> model_verts_inds; 
+    std::vector<std::vector<PointType>> model_verts; 
+    std::vector<std::vector<double>> model_verts_weights;
   };
 
   struct ObjectDetection {
     Eigen::Affine3f est_tf;
-    std::vector<PointCorrespondence> correspondences;
+    std::vector<PointQuadCorrespondence> correspondences;
     int obj_ind;
   };
-*/
 
   // Viewer main loop
   // Pressing left-right arrow keys allows viewing of individual point-face correspondences
   // Pressing "z" toggles viewing everything at once or doing individual-correspondence viewing
   // Pressing up-down arrow keys scrolls through different optimal solutions (TODO(gizatt) make this happen)
-
-  pcl::visualization::PCLVisualizer viewer ("Point Collection");
   viewer.setShowFPS(false);
   pcl::visualization::PointCloudColorHandlerCustom<PointType> scene_color_handler (scene_pts, 255, 255, 128);
   pcl::visualization::PointCloudColorHandlerCustom<PointType> model_color_handler (actual_model_pts, 255, 255, 128);
@@ -660,17 +604,15 @@ int main(int argc, char** argv) {
   max_corresp_id = optNumPointQuads;
   pending_redraw = true;
 
-/*
   std::vector<ObjectDetection> detections;
   MatrixXd f_est;
   MatrixXd C_est;
-  */
+
   reextract_solution = true;
   double objective = -12345;
 
   while (!viewer.wasStopped ()){
     if (reextract_solution){
-      /*
       detections.clear();
 
       f_est= prog.GetSolution(f, target_sol);
@@ -689,6 +631,8 @@ int main(int argc, char** argv) {
         cout << ground_truth_tf.translation().transpose() << endl;
         cout << ground_truth_tf.matrix().block<3,3>(0,0) << endl;
         printf("------------------------------------------------\n");
+
+/*
         Vector3f Tf = prog.GetSolution(transform_by_object[i].T, target_sol).cast<float>();
         Matrix3f Rf = prog.GetSolution(transform_by_object[i].R, target_sol).cast<float>();
         printf("Transform:\n");
@@ -705,40 +649,56 @@ int main(int argc, char** argv) {
         printf("\t\t%f, %f, %f\n", RfTRf(2, 0), RfTRf(2, 1), RfTRf(2, 2));
         printf("------------------------------------------------\n");
         printf("************************************************\n");
-
+*/
 
         detection.est_tf.setIdentity();
-        detection.est_tf.translation() = Tf;
-        detection.est_tf.matrix().block<3,3>(0,0) = Rf;
+//        detection.est_tf.translation() = Tf;
+//        detection.est_tf.matrix().block<3,3>(0,0) = Rf;
 
-        for (int scene_i=0; scene_i<f_est.rows(); scene_i++){
-          for (int face_j=0; face_j<f_est.cols(); face_j++){
-            // if this face is assigned, and this face is a member of this object,
-            // then display this point
-            if (f_est(scene_i, face_j) > 0.5 && B(i, face_j) > 0.5){
-              PointCorrespondence new_corresp;
-              new_corresp.scene_pt = scene_pts->at(scene_i);
-              new_corresp.model_pt = transformPoint(scene_pts->at(scene_i), detection.est_tf);
-              new_corresp.scene_ind = scene_i;
-              new_corresp.face_ind = face_j;
-              for (int k_v=0; k_v<vertices.cols(); k_v++){
-                if (C_est(scene_i, k_v) >= 0.0){
-                  new_corresp.model_verts.push_back( PointType(vertices(0, k_v), vertices(1, k_v), vertices(2, k_v)) );
-                  new_corresp.vert_weights.push_back( C_est(target_corresp_id, k_v) );
-                  new_corresp.vert_inds.push_back(k_v);
+        for (int quad_i=0; quad_i<optNumPointQuads; quad_i++){
+          PointQuadCorrespondence new_corresp;
+          new_corresp.scene_quad = point_quads[quad_i];
+          int inds[4] = {new_corresp.scene_quad.ind_a,
+                         new_corresp.scene_quad.ind_b,
+                         new_corresp.scene_quad.ind_c,
+                         new_corresp.scene_quad.ind_d};
+          new_corresp.model_faces.resize(4);
+          new_corresp.model_verts.resize(4);
+          new_corresp.model_verts_weights.resize(4);
+          new_corresp.model_verts_inds.resize(4);
+          new_corresp.est_model_points.resize(4);
+          // for each of the four member correspondences, go find what face and vert was corresponded to
+          for (int k=0; k<4; k++){
+            for (int face_j=0; face_j<f_est.cols(); face_j++){
+              if (f_est(inds[k], face_j) > 0.5){
+                new_corresp.model_faces[k] = face_j;
+                new_corresp.model_verts[k].resize(0);
+                new_corresp.model_verts_weights[k].resize(0);
+                new_corresp.model_verts_inds[k].resize(0);
+                new_corresp.est_model_points[k] = Vector3d::Zero();
+                double total_C = 0.0;
+                for (int vert_j=0; vert_j<vertices.cols(); vert_j++){
+                  if (C_est(inds[k], vert_j) > 0.0){
+                    new_corresp.model_verts[k].push_back( PointType(vertices(0, vert_j), vertices(1, vert_j), vertices(2, vert_j)) );
+                    new_corresp.model_verts_weights[k].push_back( C_est(inds[k], vert_j) );
+                    new_corresp.model_verts_inds[k].push_back( vert_j );
+                    new_corresp.est_model_points[k] += C_est(inds[k], vert_j)*vertices.col(vert_j);
+                    total_C += C_est(inds[k], vert_j);
+                  }
                 }
+                new_corresp.est_model_points[k] /= total_C;
+                continue;
               }
-              detection.correspondences.push_back(new_corresp);
             }
           }
+          detection.correspondences.push_back(new_corresp);
         }
         if (detection.correspondences.size() > 0)
           detections.push_back(detection);
       }
       reextract_solution = false;
 
-      objective = prog.GetSolution(phi).sum() + prog.GetSolution(alpha).sum();
-      */
+      //objective = prog.GetSolution(phi).sum() + prog.GetSolution(alpha).sum();
     }
 
     if (pending_redraw){
@@ -774,36 +734,33 @@ int main(int argc, char** argv) {
           viewer.addLine<PointType, PointType> (actual_model_pts->at(point_quads[k].ind_d), scene_pts->at(p), 0, 255, 0, ss_line.str ());   
         }
 
-        /*
         // Draw all correspondneces as lines
+        int num=0;
         for (auto det = detections.begin(); det != detections.end(); det++){
           for (auto corr = det->correspondences.begin(); corr != det->correspondences.end(); corr++){
-            std::stringstream ss_line;
-            ss_line << "raw_correspondence_line" << det->obj_ind << "-" << corr->face_ind << "-" << corr->scene_ind;
-            viewer.addLine<PointType, PointType> (corr->scene_pt, corr->model_pt, 255, 0, 255, ss_line.str ());
-          }
-        }
-
-        // and add all ground truth
-        for (int k_s=0; k_s<scene_pts->size(); k_s++){
-          std::stringstream ss_line;
-          int k = correspondences_gt[k_s];
-          ss_line << "gt_correspondence_line" << k << "-" << k_s;
-          viewer.addLine<PointType, PointType> (actual_model_pts->at(k), scene_pts->at(k_s), 0, 255, 0, ss_line.str ());
-        }*/
-      } else if (draw_mode == 1) {
-        /*
-        // Draw only desired correspondence
-        for (auto det = detections.begin(); det != detections.end(); det++){
-          for (auto corr = det->correspondences.begin(); corr != det->correspondences.end(); corr++){
-            if (corr->scene_ind == target_corresp_id){
+            int inds[4] = {corr->scene_quad.ind_a, corr->scene_quad.ind_b, corr->scene_quad.ind_c, corr->scene_quad.ind_d};
+            for (int k=0; k<4; k++){
               std::stringstream ss_line;
-              ss_line << "raw_correspondence_line" << det->obj_ind << "-" << corr->face_ind << "-" << corr->scene_ind;
-              viewer.addLine<PointType, PointType> (corr->scene_pt, corr->model_pt, 255, 0, 255, ss_line.str ());
+              ss_line << "correspondence_line_" << num;
+              num++;
+              viewer.addLine<PointType, PointType> (Vector3dToPoint(corr->est_model_points[k]), scene_pts->at(inds[k]), 255, 0, 255, ss_line.str());
             }
           }
         }
-*/
+
+      } else if (draw_mode == 1) {
+        int num=0;
+        for (auto det = detections.begin(); det != detections.end(); det++){
+          auto corr = &(det->correspondences[target_corresp_id]);
+          int inds[4] = {corr->scene_quad.ind_a, corr->scene_quad.ind_b, corr->scene_quad.ind_c, corr->scene_quad.ind_d};
+          for (int k=0; k<4; k++){
+            std::stringstream ss_line;
+            ss_line << "correspondence_line_" << num;
+            num++;
+            viewer.addLine<PointType, PointType> (Vector3dToPoint(corr->est_model_points[k]), scene_pts->at(inds[k]), 255, 0, 255, ss_line.str());
+          }
+        }
+
         // And desired ground truth
         int k = target_corresp_id;
         int p = correspondences_gt[point_quads[k].ind_a];

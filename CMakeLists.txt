@@ -40,6 +40,10 @@ ExternalProject_Add(drc_core_utils
 	INSTALL_COMMAND make install
 	DEPENDS drake)
 
+# This is added as an external project instead of a directory
+# so I can force the pkgconfig files for the above projects to be completed
+# before the CMake generation for the object_detection project is performed,
+# so I can use those pkgconfig files in the CMake specifications for this project.
 ExternalProject_Add(object_detection
 	PREFIX ${CMAKE_BINARY_DIR}
 	CMAKE_ARGS -DCMAKE_PROJECT_object_detection_INCLUDE:PATH=${CMAKE_SOURCE_DIR}/fix_include_dir.cmake

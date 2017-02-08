@@ -254,6 +254,7 @@ int main(int argc, char** argv) {
   if (modelsNode["options"]["model_set"])
     optModelSet = modelsNode["options"]["model_set"].as<vector<int>>();
 
+  pcl::visualization::PCLVisualizer viewer ("Point Collection");
 
   std::vector<Model> models;
 
@@ -650,7 +651,6 @@ int main(int argc, char** argv) {
   // Pressing "z" toggles viewing everything at once or doing individual-correspondence viewing
   // Pressing up-down arrow keys scrolls through different optimal solutions (TODO(gizatt) make this happen)
 
-  pcl::visualization::PCLVisualizer viewer ("Point Collection");
   viewer.setShowFPS(false);
   pcl::visualization::PointCloudColorHandlerCustom<PointType> scene_color_handler (scene_pts, 255, 255, 128);
   pcl::visualization::PointCloudColorHandlerCustom<PointType> model_color_handler (actual_model_pts, 255, 255, 128);

@@ -36,3 +36,7 @@ install(TARGETS milp_mesh_model_detector DESTINATION bin)
 add_executable(milp_multiple_mesh_models_detector milp_multiple_mesh_models_detector.cpp)
 target_link_libraries(milp_multiple_mesh_models_detector lcm drakeMultibodyParsers drakeRBM drakeOptimization drakeShapes drakeJoints drakeCommon yaml-cpp ${PCL_LIBRARIES} z ${OpenCV_LIBS} pthread)
 install(TARGETS milp_multiple_mesh_models_detector DESTINATION bin)
+
+add_executable(KinectDriver kinectDriver.cpp)
+target_link_libraries(KinectDriver lcm libfreenect2 yaml-cpp ${PCL_LIBRARIES} z ${OpenCV_LIBS} pthread)
+install(TARGETS KinectDriver DESTINATION bin)

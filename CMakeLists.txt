@@ -28,6 +28,12 @@ ExternalProject_Add(drake
 	UPDATE_COMMAND ""
 	INSTALL_COMMAND "")
 
+ExternalProject_Add(libfreenect2
+	SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/libfreenect2
+	INSTALL_DIR ${CMAKE_BINARY_DIR}
+	UPDATE_COMMAND ""
+	INSTALL_COMMAND "")
+
 # This one is actually a pod, so set it up to build as one
 ExternalProject_Add(drc_core_utils
 	PREFIX ${CMAKE_BINARY_DIR}

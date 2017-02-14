@@ -45,3 +45,7 @@ install(TARGETS miqp_4pcs_mesh_model_detector DESTINATION bin)
 add_executable(miqp_4pcs_point_model_detector miqp_4pcs_point_model_detector.cpp)
 target_link_libraries(miqp_4pcs_point_model_detector lcm drakeRBM drakeMultibodyParsers drakeOptimization drakeJoints drakeShapes drakeCommon yaml-cpp ${PCL_LIBRARIES} z ${OpenCV_LIBS} pthread)
 install(TARGETS miqp_4pcs_point_model_detector DESTINATION bin)
+
+add_executable(miqp_histogram_of_distances_detector miqp_histogram_of_distances_detector.cpp)
+target_link_libraries(miqp_histogram_of_distances_detector lcm drakeRBM drakeMultibodyParsers drakeOptimization drakeJoints drakeShapes drakeCommon yaml-cpp ${PCL_LIBRARIES} z ${OpenCV_LIBS} pthread)
+install(TARGETS miqp_histogram_of_distances_detector DESTINATION bin)

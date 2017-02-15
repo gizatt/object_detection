@@ -14,13 +14,19 @@ class PointCloudFactory
           float voxeldy;
           float voxeldz;
 
-     public:
-          //make functional to more easily parallelize
-          PointCloudFactory(const float dx = 0.1, const int dy  = 0.1, const int dz = 0.1);
           //input from LCM/Kinect
           pcl::PointCloud<pcl::PointXYZ> depthImageToPointCloud(const kinect::depth_msg_t depthImage);
 
           pcl::PointCloud<pcl::PointXYZ>::Ptr voxelDownSample(const pcl::PointCloud<pcl::PointXYZ>);
+
+
+     public:
+          //make functional to more easily parallelize
+          PointCloudFactory(const float dx = 0.1, const float dy  = 0.1, const float dz = 0.1);
+          
+          void ingestDepthImage(const lcm::ReceiveBuffer* rbuf,
+                const std::string& chan, 
+                const kinect::depth_msg_t* depthImage);
 
 };
  

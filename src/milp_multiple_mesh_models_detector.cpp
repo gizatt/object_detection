@@ -29,14 +29,12 @@
 
 #include "optimization_helpers.h"
 #include "rotation_helpers.h"
+#include "pcl_helpers.h"
 
 using namespace std;
 using namespace Eigen;
 using namespace drake::solvers;
 using namespace drake::parsers::urdf;
-
-typedef pcl::PointXYZ PointType;
-typedef pcl::Normal NormalType;
 
 const double kBigNumber = 100.0; // must be bigger than largest possible correspondance distance
 
@@ -174,6 +172,61 @@ Eigen::Matrix3Xd sample_from_surface_of_model(Model m, int N){
   }
   return out;
 }
+void projectOntoModelSet(const Eigen::Vector3d& pt, const std::vector<Model> & models, double * dist, Eigen::Vector3d * closest_pt, int * model_ind, int * face_ind){
+  *dist = std::numeric_limits<double>::infinity();
+  *model_ind = 0;
+  *face_ind = 0;
+  closest_pt->setZero();
+  //printf("Projecting %f, %f, %f...\n", pt[0], pt[1], pt[2]);
+  for (int model_i = 0; model_i < models.size(); model_i++){
+    auto ground_truth_tf = models[model_i].scene_transform.inverse() 
+                           * models[model_i].model_transform;
+    Vector3d pt_tf = ground_truth_tf * pt;
+    for (int face_i = 0; face_i < models[model_i].faces.size(); face_i++){
+      // We're looking for argmin_{pt_proj} ||pt - pt_proj||
+      //   such that pt_proj = verts * C
+
+      int n_verts = models[model_i].faces[face_i].size();
+      MathematicalProgram prog;
+      auto pt_proj = prog.NewContinuousVariables(3, 1, "pt_proj");
+
+      // pt_proj is an affine combination of vertices
+      Matrix3Xd verts(3, n_verts);
+      for (int k=0; k<n_verts; k++){
+        verts.col(k) = models[model_i].vertices.col(models[model_i].faces[face_i][k]);
+      }
+      auto C = prog.NewContinuousVariables(n_verts, 1, "C");
+      prog.AddBoundingBoxConstraint(0.0, 1.0, C);
+      prog.AddLinearEqualityConstraint(VectorXd::Ones(n_verts).transpose(), 1.0, C);
+      Matrix3Xd A(3, 3 + n_verts);
+      A.block(0, 0, 3, 3) = MatrixXd::Identity(3, 3);
+      A.block(0, 3, 3, n_verts) = -verts;
+      prog.AddLinearEqualityConstraint(A, Vector3d::Zero(), {pt_proj, C});
+
+      // minimize quadratic error between our pt and the projected point
+      prog.AddL2NormCost(MatrixXd::Identity(3, 3), pt_tf, pt_proj);
+
+      auto out = prog.Solve();
+
+      if (out >= 0){
+        Vector3d pt_proj_sol = prog.GetSolution(pt_proj);
+        pt_proj_sol = ground_truth_tf.inverse()*pt_proj_sol;
+        double new_dist = (pt_proj_sol - pt).norm();
+        if (new_dist < *dist){
+          //printf("\t New best dist %f (vs %f) to projected point %f, %f, %f on face %d, model %d\n", new_dist, *dist, pt_proj_sol[0], pt_proj_sol[1], pt_proj_sol[2], face_i, model_i);
+          *dist = new_dist;
+          *model_ind = model_i;
+          *face_ind = face_i;
+          *closest_pt = pt_proj_sol;
+        } else {
+          //printf("\t Rejected new dist %f (vs %f) to projected point %f, %f, %f on face %d, model %d\n", new_dist, *dist, pt_proj_sol[0], pt_proj_sol[1], pt_proj_sol[2], face_i, model_i);
+        }
+      } else {
+        printf("optimization returned negative number? that should have been feasible!\n");
+      }
+    }
+  }
+}
 
 bool pending_redraw = true;
 int draw_mode = 0;
@@ -218,6 +271,10 @@ int main(int argc, char** argv) {
   double optPhiMax = 0.1;
   double optSampleDistance = 10.0;
   int optSampleModel = -1;
+  bool optUseInitialGuess = false;
+  double optRotCorruption = 0.1;
+  double optTransCorruption = 0.1;
+
   vector<int> optModelSet;
 
   if (argc != 2){
@@ -253,6 +310,12 @@ int main(int argc, char** argv) {
     optSampleModel = modelsNode["options"]["sample_model"].as<int>();
   if (modelsNode["options"]["model_set"])
     optModelSet = modelsNode["options"]["model_set"].as<vector<int>>();
+  if (modelsNode["options"]["use_initial_guess"])
+    optUseInitialGuess = modelsNode["options"]["use_initial_guess"].as<bool>();
+  if (modelsNode["options"]["rot_corruption"])
+    optRotCorruption = modelsNode["options"]["rot_corruption"].as<double>();
+  if (modelsNode["options"]["trans_corruption"])
+    optTransCorruption = modelsNode["options"]["trans_corruption"].as<double>();
 
   pcl::visualization::PCLVisualizer viewer ("Point Collection");
 
@@ -609,6 +672,55 @@ int main(int argc, char** argv) {
          iter++){
       prog.SetSolverOption("GUROBI", iter->first.as<string>(), iter->second.as<float>());
     }
+  }
+
+  if (optUseInitialGuess){
+    std::vector<Model> corrupted_models = models;
+    // corrupt scene tfs by a bit
+    for (int model_i=0; model_i<corrupted_models.size(); model_i++){
+      Affine3d scene_tf_corruption;
+      scene_tf_corruption.setIdentity();
+      scene_tf_corruption.translation() = Vector3d(randrange(-optTransCorruption, optTransCorruption),
+                                                   randrange(-optTransCorruption, optTransCorruption),
+                                                   randrange(-optTransCorruption, optTransCorruption));
+      scene_tf_corruption.rotate(AngleAxisd(randrange(-optRotCorruption, optRotCorruption), Vector3d::UnitZ()));
+      scene_tf_corruption.rotate(AngleAxisd(randrange(-optRotCorruption, optRotCorruption), Vector3d::UnitY()));
+      scene_tf_corruption.rotate(AngleAxisd(randrange(-optRotCorruption, optRotCorruption), Vector3d::UnitX()));
+      corrupted_models[model_i].scene_transform = scene_tf_corruption*corrupted_models[model_i].scene_transform;
+    }
+
+    // Given some reasonable guess of model TFs, back out correspondences and
+    // supply this as an initial guess.
+    for (int k=0; k<corrupted_models.size(); k++){
+      auto ground_truth_tf = corrupted_models[k].scene_transform.inverse().cast<float>() 
+                             * corrupted_models[k].model_transform.cast<float>();
+      prog.SetInitialGuess(transform_by_object[k].T, ground_truth_tf.translation());
+      prog.SetInitialGuess(transform_by_object[k].R, ground_truth_tf.matrix().block<3, 3>(0, 0));
+    }
+    // for every scene point, project it down onto the models at the supplied TF to get closest face, and use 
+    // that face assignment as our guess
+    printf("Doing a bunch of inefficient point projections...\n");
+
+    // Each row is a set of affine coefficients relating the scene point to a combination
+    // of vertices on a single face of the model
+    //MatrixXd C0(scene_pts->size(), vertices.cols());
+    //C0.setZero();
+    // Binary variable selects which face is being corresponded to
+    MatrixXd f0(scene_pts->size(), F.rows());
+    f0.setZero();
+    for (int i=0; i<scene_pts->size(); i++){
+      printf("\rGenerating guess for point (%d)/(%d)", i, (int)scene_pts->size());
+      double dist = std::numeric_limits<double>::infinity();
+      Vector3d closest_pt;
+      int model_ind;
+      int face_ind;
+      projectOntoModelSet(pointToVector3d(scene_pts->at(i)), corrupted_models, &dist, &closest_pt, &model_ind, &face_ind);
+      if (dist < 0.1){
+        f0(i, face_ind) = 1;
+      }
+      // else it's an outlier point
+    }
+    prog.SetInitialGuess(f, f0);
   }
 
 //  prog.SetSolverOption("GUROBI", "Cutoff", 50.0);

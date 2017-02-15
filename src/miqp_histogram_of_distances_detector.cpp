@@ -29,23 +29,14 @@
 
 #include "optimization_helpers.h"
 #include "rotation_helpers.h"
+#include "pcl_helpers.h"
 
 using namespace std;
 using namespace Eigen;
 using namespace drake::solvers;
 using namespace drake::parsers::urdf;
 
-typedef pcl::PointXYZ PointType;
-typedef pcl::Normal NormalType;
-
 const double kBigNumber = 100.0; // must be bigger than largest possible correspondance distance
-
-Vector3d pointToVector3d(PointType & point){
-  return Vector3d(point.x, point.y, point.z);
-}
-PointType Vector3dToPoint(Vector3d & vec){
-  return PointType(vec(0), vec(1), vec(2));
-}
 
 struct Model {
   std::string name;

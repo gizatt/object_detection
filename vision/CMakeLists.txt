@@ -21,6 +21,10 @@ find_package(OpenCV)
 #target_link_libraries(testMcCormickEnvelope lcm drakeRBM drakeOptimization drakeJoints drakeCommon yaml-cpp ${PCL_LIBRARIES} z ${OpenCV_LIBS} pthread)
 #install(TARGETS testMcCormickEnvelope DESTINATION bin)
 
+file(GLOB kinectPointCloud
+    "*.h"
+    "*.cpp"
+)
 
-add_executable(kinectBridge kinectBridge.cpp)
-target_link_libraries(kinectBridge ${PCL_LIBRARIES} lcm)
+add_executable(kinectPointCloud ${kinectPointCloud})
+target_link_libraries(kinectPointCloud ${PCL_LIBRARIES} lcm)

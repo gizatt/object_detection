@@ -1,9 +1,16 @@
+
+#ifndef PointCloudFactory_H
+#define PointCloudFactory_H
+
 #include <lcm/lcm-cpp.hpp>
 #include "kinect/depth_msg_t.hpp"
 #include <iostream>
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
 #include <pcl/filters/voxel_grid.h>
+#include <pcl/impl/point_types.hpp>
+
+
 
 //factory to filter/downsample frames of depth images.
 class PointCloudFactory
@@ -17,16 +24,18 @@ class PointCloudFactory
           //input from LCM/Kinect
           pcl::PointCloud<pcl::PointXYZ> depthImageToPointCloud(const kinect::depth_msg_t depthImage);
 
-          pcl::PointCloud<pcl::PointXYZ>::Ptr voxelDownSample(const pcl::PointCloud<pcl::PointXYZ>);
+          pcl::PointCloud<pcl::PointXYZ>::Ptr voxelDownSample(pcl::PointCloud<pcl::PointXYZ>);
 
 
      public:
-          //make functional to more easily parallelize
-          PointCloudFactory(const float dx = 0.1, const float dy  = 0.1, const float dz = 0.1);
+          PointCloudFactory();
+
+          PointCloudFactory(const float dx, const float dy, const float dz);
           
           void ingestDepthImage(const lcm::ReceiveBuffer* rbuf,
                 const std::string& chan, 
                 const kinect::depth_msg_t* depthImage);
 
 };
- 
+
+#endif

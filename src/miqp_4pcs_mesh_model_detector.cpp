@@ -29,12 +29,14 @@
 
 #include "optimization_helpers.h"
 #include "rotation_helpers.h"
-#include "pcl_helpers.h"
 
 using namespace std;
 using namespace Eigen;
 using namespace drake::solvers;
 using namespace drake::parsers::urdf;
+
+typedef pcl::PointXYZ PointType;
+typedef pcl::Normal NormalType;
 
 const double kBigNumber = 100.0; // must be bigger than largest possible correspondance distance
 
@@ -69,6 +71,13 @@ MatrixXd boundingBox2FaceSel(Matrix3Xd bb_pts){
     }
   }
   return F;
+}
+
+Vector3d pointToVector3d(PointType & point){
+  return Vector3d(point.x, point.y, point.z);
+}
+PointType Vector3dToPoint(Vector3d & vec){
+  return PointType(vec(0), vec(1), vec(2));
 }
 
 vector< vector<Vector3d> > boundingBox2QuadMesh(MatrixXd bb_pts){
@@ -172,61 +181,6 @@ Eigen::Matrix3Xd sample_from_surface_of_model(Model m, int N){
   }
   return out;
 }
-void projectOntoModelSet(const Eigen::Vector3d& pt, const std::vector<Model> & models, double * dist, Eigen::Vector3d * closest_pt, int * model_ind, int * face_ind){
-  *dist = std::numeric_limits<double>::infinity();
-  *model_ind = 0;
-  *face_ind = 0;
-  closest_pt->setZero();
-  //printf("Projecting %f, %f, %f...\n", pt[0], pt[1], pt[2]);
-  for (int model_i = 0; model_i < models.size(); model_i++){
-    auto ground_truth_tf = models[model_i].scene_transform.inverse() 
-                           * models[model_i].model_transform;
-    Vector3d pt_tf = ground_truth_tf * pt;
-    for (int face_i = 0; face_i < models[model_i].faces.size(); face_i++){
-      // We're looking for argmin_{pt_proj} ||pt - pt_proj||
-      //   such that pt_proj = verts * C
-
-      int n_verts = models[model_i].faces[face_i].size();
-      MathematicalProgram prog;
-      auto pt_proj = prog.NewContinuousVariables(3, 1, "pt_proj");
-
-      // pt_proj is an affine combination of vertices
-      Matrix3Xd verts(3, n_verts);
-      for (int k=0; k<n_verts; k++){
-        verts.col(k) = models[model_i].vertices.col(models[model_i].faces[face_i][k]);
-      }
-      auto C = prog.NewContinuousVariables(n_verts, 1, "C");
-      prog.AddBoundingBoxConstraint(0.0, 1.0, C);
-      prog.AddLinearEqualityConstraint(VectorXd::Ones(n_verts).transpose(), 1.0, C);
-      Matrix3Xd A(3, 3 + n_verts);
-      A.block(0, 0, 3, 3) = MatrixXd::Identity(3, 3);
-      A.block(0, 3, 3, n_verts) = -verts;
-      prog.AddLinearEqualityConstraint(A, Vector3d::Zero(), {pt_proj, C});
-
-      // minimize quadratic error between our pt and the projected point
-      prog.AddL2NormCost(MatrixXd::Identity(3, 3), pt_tf, pt_proj);
-
-      auto out = prog.Solve();
-
-      if (out >= 0){
-        Vector3d pt_proj_sol = prog.GetSolution(pt_proj);
-        pt_proj_sol = ground_truth_tf.inverse()*pt_proj_sol;
-        double new_dist = (pt_proj_sol - pt).norm();
-        if (new_dist < *dist){
-          //printf("\t New best dist %f (vs %f) to projected point %f, %f, %f on face %d, model %d\n", new_dist, *dist, pt_proj_sol[0], pt_proj_sol[1], pt_proj_sol[2], face_i, model_i);
-          *dist = new_dist;
-          *model_ind = model_i;
-          *face_ind = face_i;
-          *closest_pt = pt_proj_sol;
-        } else {
-          //printf("\t Rejected new dist %f (vs %f) to projected point %f, %f, %f on face %d, model %d\n", new_dist, *dist, pt_proj_sol[0], pt_proj_sol[1], pt_proj_sol[2], face_i, model_i);
-        }
-      } else {
-        printf("optimization returned negative number? that should have been feasible!\n");
-      }
-    }
-  }
-}
 
 bool pending_redraw = true;
 int draw_mode = 0;
@@ -263,22 +217,14 @@ void keyboardEventOccurred (const pcl::visualization::KeyboardEvent &event,
 int main(int argc, char** argv) {
   srand(getUnixTime());
 
+  int optNumPointQuads = 10;
   int optNumRays = 10;
-  int optRotationConstraint = 4;
-  int optRotationConstraintNumFaces = 2;
   int optSceneSamplingMode = 0;
-  bool optAllowOutliers = true;
-  double optPhiMax = 0.1;
-  double optSampleDistance = 10.0;
   int optSampleModel = -1;
-  bool optUseInitialGuess = false;
-  double optRotCorruption = 0.1;
-  double optTransCorruption = 0.1;
-
-  vector<int> optModelSet;
+  double optSampleDistance = 10.0;
 
   if (argc != 2){
-    printf("Use: milp_multiple_mesh_models_detector <config file>\n");
+    printf("Use: milp_4pcs_mesh_model_detector <config file>\n");
     exit(-1);
   }
 
@@ -287,43 +233,31 @@ int main(int argc, char** argv) {
     throw std::runtime_error("LCM is not good");
   }
 
+  pcl::visualization::PCLVisualizer viewer ("Point Collection");
+
   // Set up robot
   string yamlString = string(argv[1]);
   YAML::Node modelsNode = YAML::LoadFile(yamlString);
-
+  if (modelsNode["options"]["num_point_quads"])
+    optNumPointQuads = modelsNode["options"]["num_point_quads"].as<int>();
   if (modelsNode["options"]["num_rays"])
     optNumRays = modelsNode["options"]["num_rays"].as<int>();
-
-  if (modelsNode["options"]["rotation_constraint"])
-    optRotationConstraint = modelsNode["options"]["rotation_constraint"].as<int>();
-  if (modelsNode["options"]["rotation_constraint_num_faces"])
-    optRotationConstraintNumFaces = modelsNode["options"]["rotation_constraint_num_faces"].as<int>();
   if (modelsNode["options"]["scene_sampling_mode"])
     optSceneSamplingMode = modelsNode["options"]["scene_sampling_mode"].as<int>();
-  if (modelsNode["options"]["allow_outliers"])
-    optAllowOutliers = modelsNode["options"]["allow_outliers"].as<bool>();
-  if (modelsNode["options"]["phi_max"])
-    optPhiMax = modelsNode["options"]["phi_max"].as<double>();
   if (modelsNode["options"]["sample_distance"])
     optSampleDistance = modelsNode["options"]["sample_distance"].as<double>();
   if (modelsNode["options"]["sample_model"])
     optSampleModel = modelsNode["options"]["sample_model"].as<int>();
-  if (modelsNode["options"]["model_set"])
-    optModelSet = modelsNode["options"]["model_set"].as<vector<int>>();
-  if (modelsNode["options"]["use_initial_guess"])
-    optUseInitialGuess = modelsNode["options"]["use_initial_guess"].as<bool>();
-  if (modelsNode["options"]["rot_corruption"])
-    optRotCorruption = modelsNode["options"]["rot_corruption"].as<double>();
-  if (modelsNode["options"]["trans_corruption"])
-    optTransCorruption = modelsNode["options"]["trans_corruption"].as<double>();
-
-  pcl::visualization::PCLVisualizer viewer ("Point Collection");
 
   std::vector<Model> models;
 
   printf("Loaded\n");
   for (auto iter=modelsNode["models"].begin(); iter != modelsNode["models"].end(); iter++){
     models.push_back(load_model_from_yaml_node(*iter));
+  }
+  if (models.size() != 1){
+    printf("ONLY SUPPORTING 1 MODEL FOR NOW\n");
+    return -1;
   }
   printf("Parsed models\n");
 
@@ -333,11 +267,7 @@ int main(int argc, char** argv) {
   map<int, int> correspondences_gt;
 
   // different kind of sampling: pick random vertex
-  int model_num = -1;
-  if (model_num >= 0)
-    model_num = optSampleModel;
-  else if (optSceneSamplingMode == 2)
-    model_num = rand() % models.size();
+  int model_num = rand() % models.size();
 
   int k=0;
   for (int m=0; m<models.size(); m++){
@@ -377,20 +307,13 @@ int main(int argc, char** argv) {
   }
   printf("Running with %d scene pts\n", (int)scene_pts->size());
 
-  // Prune down to only models we've been instructed to use
-  if (optModelSet.size() > 0){
-    vector<Model> new_model_set;
-    for (int i=0; i<optModelSet.size(); i++){
-      new_model_set.push_back(models[optModelSet[i]]);
-    }
-    models = new_model_set;
-  }
-
   // Do meshing conversions and setup -- models vertices all stored
   // at origin for now, overlapping each other
   // calculate total # of vertices
   int total_num_verts = 0;
   int total_num_faces = 0;
+  
+  // For now, restrict ourselves
   for (int i=0; i<models.size(); i++){
     total_num_verts += models[i].vertices.cols();
     total_num_faces += models[i].faces.size();
@@ -422,87 +345,110 @@ int main(int argc, char** argv) {
     faces_start += num_faces;
   }
 
+  // Generate the point quads we'll use
+  //   a *
+  //      --      ---* d
+  //        -- ---
+  //        --*e
+  //  c *---    --
+  //              --
+  //                * b
+  struct PointQuad {
+    int ind_a;
+    int ind_b;
+    int ind_c;
+    int ind_d;
+    Vector3d a;
+    Vector3d b;
+    Vector3d c;
+    Vector3d d;
+    Vector3d e;
+    double r_1;
+    double r_2;
+  };
+  printf("Generating point quads");
+  vector<PointQuad> point_quads(optNumPointQuads);
+  int i=0;
+  while (i < optNumPointQuads){
+    int ind_a = rand() % scene_pts->size();
+    int ind_b = rand() % scene_pts->size();
+    int ind_c = rand() % scene_pts->size();
+    if (ind_a != ind_b && ind_b != ind_c && ind_a != ind_c){
+      point_quads[i].a = pointToVector3d(scene_pts->at(ind_a));
+      point_quads[i].b = pointToVector3d(scene_pts->at(ind_b));
+      point_quads[i].c = pointToVector3d(scene_pts->at(ind_c));
+      point_quads[i].ind_a = ind_a;
+      point_quads[i].ind_b = ind_b;
+      point_quads[i].ind_c = ind_c;
+
+      // find vert that is the least out-of-plane
+      // TODO(gizatt) maybe I should pick one that is slightly out of plane instead?
+      Vector3d norm_vector = (point_quads[i].a - point_quads[i].b).cross(point_quads[i].a - point_quads[i].c);
+      norm_vector /= norm_vector.norm();
+
+      double best_oop_dist = 10000000.0;
+      bool found_one = false;
+      for (int j=0; j<scene_pts->size(); j++){
+        double oop_dist = fabs((pointToVector3d(scene_pts->at(j)) - point_quads[i].a).transpose() * norm_vector);
+        if (j != ind_a && j != ind_b && j != ind_c && 
+          oop_dist < best_oop_dist){
+          point_quads[i].d = pointToVector3d(scene_pts->at(j));
+          point_quads[i].ind_d = j;
+          best_oop_dist = oop_dist;
+          found_one = true;
+        }
+      }
+
+      if (found_one){
+        // We now have four approximately-coplanar points
+        // we need to find e, which may require flipping c and d to get the lines to cross
+        // Take the flipping of b and c that gives the least distance between the two lines,
+        // and take the point of closest approach between them on a<->b to be e.
+
+        // todo(gizatt) check for parallel vectors
+        Vector3d along_ab = point_quads[i].b - point_quads[i].a; along_ab /= along_ab.norm();
+        Vector3d along_cd = point_quads[i].d - point_quads[i].c; along_cd /= along_cd.norm();
+        Vector3d e_ab = ((point_quads[i].c - point_quads[i].a).transpose() * along_ab) * along_ab + point_quads[i].a;
+        Vector3d e_cd = ((point_quads[i].c - point_quads[i].a).transpose() * along_cd) * along_cd + point_quads[i].c;
+        double dist_abcd = (e_ab - e_cd).norm();
+
+
+        Vector3d along_ac = point_quads[i].a - point_quads[i].c; along_ac /= along_ac.norm();
+        Vector3d along_bd = point_quads[i].b - point_quads[i].d; along_bd /= along_bd.norm();
+        Vector3d e_ac = ((point_quads[i].b - point_quads[i].a).transpose() * along_ac) * along_ac + point_quads[i].a;
+        Vector3d e_bd = ((point_quads[i].b - point_quads[i].a).transpose() * along_bd) * along_bd + point_quads[i].b;
+        double dist_acbd = (e_ac - e_bd).norm();
+
+        if (dist_abcd < dist_acbd){
+          point_quads[i].e = e_ab;
+        } else {
+          point_quads[i].e = e_ac;
+          Vector3d buf = point_quads[i].b;
+          int old_b_ind = point_quads[i].ind_b;
+          point_quads[i].b = point_quads[i].c;
+          point_quads[i].ind_b = point_quads[i].ind_c;
+          point_quads[i].c = buf;
+          point_quads[i].ind_c = old_b_ind;
+        }
+        point_quads[i].r_1 = (point_quads[i].e - point_quads[i].a).norm() / (point_quads[i].b - point_quads[i].a).norm();
+        point_quads[i].r_2 = (point_quads[i].e - point_quads[i].c).norm() / (point_quads[i].d - point_quads[i].c).norm(); 
+        i++;
+      }
+    }
+    printf("%d,", i);
+  }
+  printf("\n");
+
   // See https://www.sharelatex.com/project/5850590c38884b7c6f6aedd1
   // for problem formulation
   MathematicalProgram prog;
-
-  // Allocate slacks to choose minimum L-1 norm over objects
-  auto phi = prog.NewContinuousVariables(scene_pts->size(), 1, "phi");
   
-  // And slacks to store term-wise absolute value terms for L-1 norm calculation
-  auto alpha = prog.NewContinuousVariables(3, scene_pts->size(), "alpha");
-
   // Each row is a set of affine coefficients relating the scene point to a combination
   // of vertices on a single face of the model
   auto C = prog.NewContinuousVariables(scene_pts->size(), vertices.cols(), "C");
-  // Binary variable selects which face is being corresponded to
+  
+  // Binary variable selects which face is being corresponded to by each point in each point quad
   auto f = prog.NewBinaryVariables(scene_pts->size(), F.rows(),"f");
-
-  struct TransformationVars {
-    VectorXDecisionVariable T;
-    MatrixXDecisionVariable R;
-  };
-  std::vector<TransformationVars> transform_by_object;
-  for (int i=0; i<models.size(); i++){
-    TransformationVars new_tr;
-    char name_postfix[100];
-    sprintf(name_postfix, "_%s_%d", models[i].name.c_str(), i);
-    new_tr.T = prog.NewContinuousVariables(3, string("T")+string(name_postfix));
-    prog.AddBoundingBoxConstraint(-100*VectorXd::Ones(3), 100*VectorXd::Ones(3), new_tr.T);
-    new_tr.R = NewRotationMatrixVars(&prog, string("R") + string(name_postfix));
-
-    if (optRotationConstraint > 0){
-      switch (optRotationConstraint){
-        case 1:
-          break;
-        case 2:
-          // Columnwise and row-wise L1-norm >=1 constraints
-          for (int k=0; k<3; k++){
-            prog.AddLinearConstraint(Vector3d::Ones().transpose(), 1.0, std::numeric_limits<double>::infinity(), new_tr.R.row(k).transpose());
-            prog.AddLinearConstraint(Vector3d::Ones().transpose(), 1.0, std::numeric_limits<double>::infinity(), new_tr.R.col(k));
-          }
-          break;
-        case 3:
-          addMcCormickQuaternionConstraint(prog, new_tr.R, optRotationConstraintNumFaces, optRotationConstraintNumFaces);
-          break;
-        case 4:
-          AddRotationMatrixMcCormickEnvelopeMilpConstraints(&prog, new_tr.R, optRotationConstraintNumFaces);
-          break;
-        case 5:
-          AddBoundingBoxConstraintsImpliedByRollPitchYawLimits(&prog, new_tr.R, kYaw_0_to_PI_2 | kPitch_0_to_PI_2 | kRoll_0_to_PI_2);
-          break;
-        default:
-          printf("invalid optRotationConstraint option!\n");
-          exit(-1);
-          break;
-      }
-    } else {
-      // constrain rotations to ground truth
-      // I know I can do this in one constraint with 9 rows, but eigen was giving me trouble
-      auto ground_truth_tf = models[i].scene_transform.inverse().cast<float>() * models[i].model_transform.cast<float>();
-      for (int i=0; i<3; i++){
-        for (int j=0; j<3; j++){
-          prog.AddLinearEqualityConstraint(Eigen::MatrixXd::Identity(1, 1), ground_truth_tf.rotation()(i, j), new_tr.R.block<1,1>(i, j));
-        }
-      }
-    }
-
-    transform_by_object.push_back(new_tr);
-  }
-
-  // Optimization pushes on slacks to make them tight (make them do their job)
-  prog.AddLinearCost(1.0 * VectorXd::Ones(scene_pts->size()), phi);
-  /*
-  for (int k=0; k<3; k++){
-    prog.AddLinearCost(1.0 * VectorXd::Ones(alpha.cols()), {alpha.row(k)});
-  }./bias
-  */
-
-  // Constrain slacks nonnegative, to help the estimation of lower bound in relaxation  
-  prog.AddBoundingBoxConstraint(0.0, std::numeric_limits<double>::infinity(), phi);
-  for (int k=0; k<3; k++){
-    prog.AddBoundingBoxConstraint(0.0, std::numeric_limits<double>::infinity(), {alpha.row(k).transpose()});
-  }
 
   // Constrain each row of C to sum to 1 if a face is selected, to make them proper
   // affine coefficients
@@ -518,11 +464,7 @@ int main(int argc, char** argv) {
   // one face to correspond to
   Eigen::MatrixXd f1 = Eigen::MatrixXd::Ones(1, f.cols());
   for (size_t k=0; k<f.rows(); k++){
-    if (optAllowOutliers){
-      prog.AddLinearConstraint(f1, 0, 1, f.row(k).transpose()); 
-    } else {
-      prog.AddLinearEqualityConstraint(f1, 1, f.row(k).transpose());
-    }
+    prog.AddLinearEqualityConstraint(f1, 1, f.row(k).transpose());
   }
 
   // Force all elems of C nonnegative
@@ -554,101 +496,91 @@ int main(int argc, char** argv) {
   auto C_dummy = prog.NewContinuousVariables(1, "c_dummy_zero");
   prog.AddLinearEqualityConstraint(Eigen::MatrixXd::Ones(1, 1), Eigen::MatrixXd::Zero(1, 1), C_dummy);
 
-  // Helper variable to produce linear constraint
-  // alpha_{i, l} +/- (R_l * s_i + T - M C_{i, :}^T) - Big * B_l * f_i >= -Big
-  auto AlphaConstrPos = Eigen::RowVectorXd(1, 1+3+1+vertices.cols() + B.cols());    
-  AlphaConstrPos.block<1, 1>(0, 0) = MatrixXd::Ones(1, 1); // multiplies alpha_{i, l} elem
-  AlphaConstrPos.block<1, 1>(0, 4) = -1.0 * MatrixXd::Ones(1, 1); // T bias term
-  auto AlphaConstrNeg = Eigen::RowVectorXd(1, 1+3+1+vertices.cols() + B.cols());    
-  AlphaConstrNeg.block<1, 1>(0, 0) = MatrixXd::Ones(1, 1); // multiplies alpha_{i, l} elem
-  AlphaConstrNeg.block<1, 1>(0, 4) = MatrixXd::Ones(1, 1); // T bias term
-
   printf("Starting to add correspondence costs... ");
-  for (int l=0; l<models.size(); l++){
-    AlphaConstrPos.block(0, 5+vertices.cols(), 1, B.cols()) = -kBigNumber*B.row(l); // multiplies f_i
-    AlphaConstrNeg.block(0, 5+vertices.cols(), 1, B.cols()) = -kBigNumber*B.row(l); // multiplies f_i
+  for (int i=0; i<optNumPointQuads; i++){
+    printf("=");
 
-    for (int i=0; i<scene_pts->size(); i++){
-      printf("=");
+    // add lower-bound L1-norm distance constraints on each point pair in the quad
+    // to prevent degenerate sols where a = b and/or c = d
+    // constrain ||x_1 - x_2||_1 >= 
+    Vector3d * pts[4] = {&point_quads[i].a,
+                         &point_quads[i].b,
+                         &point_quads[i].c,
+                         &point_quads[i].d};
+    int inds[4] = {point_quads[i].ind_a,
+                     point_quads[i].ind_b,
+                     point_quads[i].ind_c,
+                     point_quads[i].ind_d};
+    char buf[100];
+    for (int u=0; u<4; u++){
+      for (int v=u+1; v<4; v++){
+        // Constraint || x_1 - x_2 ||_1 >= ||pt_a - pt_b||_1 / 2.0 (factor of 2 allows significant variation due to noise if necessary)
+        sprintf(buf, "L1_Norm_Constr_Slack_%d_%d_%d", i, u, v);
+        // phi = -|| x_1 - x_2 ||_1
+        auto phi = prog.NewContinuousVariables(1, buf);
 
-      // constrain L-1 distance slack based on correspondences
-      // phi_i >= 1^T alpha_{i}
-      // phi_i - 1&T alpha_{i} >= 0
-      RowVectorXd PhiConstr(1 + 3);
-      PhiConstr.setZero();
-      PhiConstr(0, 0) = 1.0; // multiplies phi
-      PhiConstr.block<1,3>(0,1) = -RowVector3d::Ones(); // multiplies alpha
-      prog.AddLinearConstraint(PhiConstr, 0, std::numeric_limits<double>::infinity(),
-      {phi.block<1,1>(i, 0),
-       alpha.col(i)});
+        printf(
+        "TODO:\n"
+        "- Reconsider the constraints I need to have here, including:\n"
+           "- How to constrain corresponded points are coplanar?\n"
+           "- How to constrain corresponded points not all the same?\n"
+           "- Maybe just drop this down to 4pcs point to point.\n"
+        );
 
-      // If we're allowing outliers, we need to constrain each phi_i to be bigger than
-      // a penalty amount if no faces are selected
-      if (optAllowOutliers){
-        // phi_i >= phi_max - (ones * f_i)*BIG
-        // -> phi_ + (ones * f_i)*BIG >= phi_max
-        Eigen::MatrixXd A_phimax = Eigen::MatrixXd::Ones(1, f.cols() + 1);
-        A_phimax.block(0, 0, 1, f.cols()) = Eigen::MatrixXd::Ones(1, f.cols())*kBigNumber;
-        for (size_t k=0; k<f.rows(); k++){
-          prog.AddLinearConstraint(A_phimax, optPhiMax, std::numeric_limits<double>::infinity(), {f.row(k).transpose(), phi.row(k)});
+        // push down on phi to make it a tight approx
+        prog.AddLinearCost(MatrixXd::Ones(1, 1), phi);
+        // phi >= all 8 possible elementwise sign flips of (x_1 - x_2)
+        // note that x_1_i = vertices.row(i) * C.row(inds[u])
+        //           x_2_i = vertices.row(i) * C.row(inds[v])
+        //   for i in 0, 1, 2 (i.e. x y z components)
+        MatrixXd A(1, 1+vertices.cols()*2); 
+        for (unsigned int x=0; x<8; x++){
+          int s0 = ((x    ) & 0x1)*2 - 1;
+          int s1 = ((x > 1) & 0x1)*2 - 1;
+          int s2 = ((x > 2) & 0x1)*2 - 1;
+          A << 1.0, s0*vertices.row(0) + s1*vertices.row(1) + s2*vertices.row(2), -s0*vertices.row(0) - s1*vertices.row(1) -s2*vertices.row(2);
+          prog.AddLinearConstraint(A, 0.0, std::numeric_limits<double>::infinity(), {phi, 
+                              C.row(inds[u]).transpose(), C.row(inds[v]).transpose()});
         }
+
+        // Finally, ||pt_1 - pt_b||_1 * 2.0 <= phi <= -||pt_1 - pt_b||_1 / 2.0
+        prog.AddLinearConstraint(MatrixXd::Ones(1, 1), -(*pts[u] - *pts[v]).lpNorm<1>() * 2.0, -(*pts[u] - *pts[v]).lpNorm<1>() / 2.0, phi);
       }
-
-      // Alphaconstr, containing the scene and model points and a translation bias term, is used the constraints
-      // on the three elems of alpha_{i, l}
-      auto s_xyz = Eigen::Vector3d(scene_pts->at(i).x, scene_pts->at(i).y, scene_pts->at(i).z);
-      AlphaConstrPos.block<1, 3>(0, 1) = -s_xyz.transpose(); // Multiples R
-      AlphaConstrNeg.block<1, 3>(0, 1) = s_xyz.transpose(); // Multiples R
-
-      AlphaConstrPos.block(0, 5, 1, vertices.cols()) = 1.0 * vertices.row(0); // multiplies the selection vars
-      prog.AddLinearConstraint(AlphaConstrPos, -kBigNumber, std::numeric_limits<double>::infinity(),
-        {alpha.block<1,1>(0, i),
-         transform_by_object[l].R.block<1, 3>(0, 0).transpose(), 
-         transform_by_object[l].T.block<1,1>(0,0),
-         C.row(i).transpose(),
-         f.row(i).transpose()});
-
-      AlphaConstrPos.block(0, 5, 1, vertices.cols()) = 1.0 * vertices.row(1); // multiplies the selection vars
-      prog.AddLinearConstraint(AlphaConstrPos, -kBigNumber, std::numeric_limits<double>::infinity(),
-        {alpha.block<1,1>(1, i),
-         transform_by_object[l].R.block<1, 3>(1, 0).transpose(), 
-         transform_by_object[l].T.block<1,1>(1,0),
-         C.row(i).transpose(),
-         f.row(i).transpose()});
-
-      AlphaConstrPos.block(0, 5, 1, vertices.cols()) = 1.0 * vertices.row(2); // multiplies the selection vars
-      prog.AddLinearConstraint(AlphaConstrPos, -kBigNumber, std::numeric_limits<double>::infinity(),
-        {alpha.block<1,1>(2, i),
-         transform_by_object[l].R.block<1, 3>(2, 0).transpose(), 
-         transform_by_object[l].T.block<1,1>(2,0),
-         C.row(i).transpose(),
-         f.row(i).transpose()});
-
-      AlphaConstrNeg.block(0, 5, 1, vertices.cols()) = -1.0 * vertices.row(0); // multiplies the selection vars
-      prog.AddLinearConstraint(AlphaConstrNeg, -kBigNumber, std::numeric_limits<double>::infinity(),
-        {alpha.block<1,1>(0, i),
-         transform_by_object[l].R.block<1, 3>(0, 0).transpose(), 
-         transform_by_object[l].T.block<1,1>(0,0),
-         C.row(i).transpose(),
-         f.row(i).transpose()});
-      AlphaConstrNeg.block(0, 5, 1, vertices.cols()) = -1.0 * vertices.row(1); // multiplies the selection vars
-      prog.AddLinearConstraint(AlphaConstrNeg, -kBigNumber, std::numeric_limits<double>::infinity(),
-        {alpha.block<1,1>(1, i),
-         transform_by_object[l].R.block<1, 3>(1, 0).transpose(), 
-         transform_by_object[l].T.block<1,1>(1,0),
-         C.row(i).transpose(),
-         f.row(i).transpose()});
-      AlphaConstrNeg.block(0, 5, 1, vertices.cols()) = -1.0 * vertices.row(2); // multiplies the selection vars
-      prog.AddLinearConstraint(AlphaConstrNeg, -kBigNumber, std::numeric_limits<double>::infinity(),
-        {alpha.block<1,1>(2, i),
-         transform_by_object[l].R.block<1, 3>(2, 0).transpose(), 
-         transform_by_object[l].T.block<1,1>(2,0),
-         C.row(i).transpose(),
-         f.row(i).transpose()});
     }
+
+    double r_1 = point_quads[i].r_1;
+    double r_2 = point_quads[i].r_2;
+
+    // want to constraint
+    // min || ( (1 - r_1) * C_a a + (r_1) C_b b) - ( (1 - r_2) * C_d c + (r_2) C_d d ) ||_2^2
+    // which we'll separate out to x, y, and z components to make writing it out easier
+
+    // simplifying to || B x ||_2^2, x = [C_a; C_b; C_c; C_d]
+    //                               B = [(1-r_1) V_x, r_1 V_x, -(1-r_2) V_x, -r_2 V_x]
+    MatrixXd B_x(1, total_num_verts + total_num_verts + total_num_verts + total_num_verts);
+    MatrixXd B_y(1, total_num_verts + total_num_verts + total_num_verts + total_num_verts);
+    MatrixXd B_z(1, total_num_verts + total_num_verts + total_num_verts + total_num_verts);
+    double coeffs[4] = {1-r_1, r_1, -(1-r_2), -r_2};
+    for (int k=0; k<4; k++){
+      B_x.block(0, k*total_num_verts, 1, total_num_verts) = coeffs[k]*vertices.row(0);
+      B_y.block(0, k*total_num_verts, 1, total_num_verts) = coeffs[k]*vertices.row(1);
+      B_z.block(0, k*total_num_verts, 1, total_num_verts) = coeffs[k]*vertices.row(2);
+    }
+
+    prog.AddQuadraticCost( B_x.transpose() * B_x, MatrixXd::Zero(1, 1), {C.row(point_quads[i].ind_a), 
+                                                                         C.row(point_quads[i].ind_b), 
+                                                                         C.row(point_quads[i].ind_c), 
+                                                                         C.row(point_quads[i].ind_d)});
+    prog.AddQuadraticCost( B_y.transpose() * B_y, MatrixXd::Zero(1, 1), {C.row(point_quads[i].ind_a), 
+                                                                         C.row(point_quads[i].ind_b), 
+                                                                         C.row(point_quads[i].ind_c), 
+                                                                         C.row(point_quads[i].ind_d)});
+    prog.AddQuadraticCost( B_z.transpose() * B_z, MatrixXd::Zero(1, 1), {C.row(point_quads[i].ind_a), 
+                                                                         C.row(point_quads[i].ind_b), 
+                                                                         C.row(point_quads[i].ind_c), 
+                                                                         C.row(point_quads[i].ind_d)});
   }
   printf("\n");
-
   double now = getUnixTime();
 
   GurobiSolver gurobi_solver;
@@ -674,60 +606,12 @@ int main(int argc, char** argv) {
     }
   }
 
-  if (optUseInitialGuess){
-    std::vector<Model> corrupted_models = models;
-    // corrupt scene tfs by a bit
-    for (int model_i=0; model_i<corrupted_models.size(); model_i++){
-      Affine3d scene_tf_corruption;
-      scene_tf_corruption.setIdentity();
-      scene_tf_corruption.translation() = Vector3d(randrange(-optTransCorruption, optTransCorruption),
-                                                   randrange(-optTransCorruption, optTransCorruption),
-                                                   randrange(-optTransCorruption, optTransCorruption));
-      scene_tf_corruption.rotate(AngleAxisd(randrange(-optRotCorruption, optRotCorruption), Vector3d::UnitZ()));
-      scene_tf_corruption.rotate(AngleAxisd(randrange(-optRotCorruption, optRotCorruption), Vector3d::UnitY()));
-      scene_tf_corruption.rotate(AngleAxisd(randrange(-optRotCorruption, optRotCorruption), Vector3d::UnitX()));
-      corrupted_models[model_i].scene_transform = scene_tf_corruption*corrupted_models[model_i].scene_transform;
-    }
-
-    // Given some reasonable guess of model TFs, back out correspondences and
-    // supply this as an initial guess.
-    for (int k=0; k<corrupted_models.size(); k++){
-      auto ground_truth_tf = corrupted_models[k].scene_transform.inverse().cast<float>() 
-                             * corrupted_models[k].model_transform.cast<float>();
-      prog.SetInitialGuess(transform_by_object[k].T, ground_truth_tf.translation());
-      prog.SetInitialGuess(transform_by_object[k].R, ground_truth_tf.matrix().block<3, 3>(0, 0));
-    }
-    // for every scene point, project it down onto the models at the supplied TF to get closest face, and use 
-    // that face assignment as our guess
-    printf("Doing a bunch of inefficient point projections...\n");
-
-    // Each row is a set of affine coefficients relating the scene point to a combination
-    // of vertices on a single face of the model
-    //MatrixXd C0(scene_pts->size(), vertices.cols());
-    //C0.setZero();
-    // Binary variable selects which face is being corresponded to
-    MatrixXd f0(scene_pts->size(), F.rows());
-    f0.setZero();
-    for (int i=0; i<scene_pts->size(); i++){
-      printf("\rGenerating guess for point (%d)/(%d)", i, (int)scene_pts->size());
-      double dist = std::numeric_limits<double>::infinity();
-      Vector3d closest_pt;
-      int model_ind;
-      int face_ind;
-      projectOntoModelSet(pointToVector3d(scene_pts->at(i)), corrupted_models, &dist, &closest_pt, &model_ind, &face_ind);
-      if (dist < 0.1){
-        f0(i, face_ind) = 1;
-      }
-      // else it's an outlier point
-    }
-    prog.SetInitialGuess(f, f0);
-  }
-
 //  prog.SetSolverOption("GUROBI", "Cutoff", 50.0);
 // isn't doing anything... not invoking this tool right?
 //  prog.SetSolverOption("GUROBI", "TuneJobs", 8);
 //  prog.SetSolverOption("GUROBI", "TuneResults", 3);
   //prog.SetSolverOption("GUROBI", )
+
 
   auto out = gurobi_solver.Solve(prog);
   string problem_string = "rigidtf";
@@ -737,46 +621,41 @@ int main(int argc, char** argv) {
 
   //prog.PrintSolution();
   printf("Code %d, problem %s solved for %lu scene solved in: %f\n", out, problem_string.c_str(), scene_pts->size(), elapsed);
-  
-  // Extract into a set of correspondences
-  struct PointCorrespondence {
-    PointType scene_pt;
-    PointType model_pt;
-    std::vector<PointType> model_verts;
-    std::vector<double> vert_weights;
 
-    // for reference into optim program
-    int scene_ind;
-    int face_ind;
-    std::vector<int> vert_inds;
+  // Extract into a set of correspondences
+  struct PointQuadCorrespondence {
+    PointQuad scene_quad;
+    std::vector<Vector3d> est_model_points;
+    std::vector<int> model_faces; // corresponded model faces and verts in order for pts a, b, c, d
+    std::vector<std::vector<int>> model_verts_inds; 
+    std::vector<std::vector<PointType>> model_verts; 
+    std::vector<std::vector<double>> model_verts_weights;
   };
 
   struct ObjectDetection {
     Eigen::Affine3f est_tf;
-    std::vector<PointCorrespondence> correspondences;
+    std::vector<PointQuadCorrespondence> correspondences;
     int obj_ind;
   };
-
 
   // Viewer main loop
   // Pressing left-right arrow keys allows viewing of individual point-face correspondences
   // Pressing "z" toggles viewing everything at once or doing individual-correspondence viewing
   // Pressing up-down arrow keys scrolls through different optimal solutions (TODO(gizatt) make this happen)
-
   viewer.setShowFPS(false);
   pcl::visualization::PointCloudColorHandlerCustom<PointType> scene_color_handler (scene_pts, 255, 255, 128);
   pcl::visualization::PointCloudColorHandlerCustom<PointType> model_color_handler (actual_model_pts, 255, 255, 128);
   viewer.registerKeyboardCallback (keyboardEventOccurred, (void*)&viewer);
 
-  max_corresp_id = scene_pts->size();
+  max_corresp_id = optNumPointQuads;
   pending_redraw = true;
-
 
   std::vector<ObjectDetection> detections;
   MatrixXd f_est;
   MatrixXd C_est;
+
   reextract_solution = true;
-  double objective;
+  double objective = -12345;
 
   while (!viewer.wasStopped ()){
     if (reextract_solution){
@@ -798,6 +677,8 @@ int main(int argc, char** argv) {
         cout << ground_truth_tf.translation().transpose() << endl;
         cout << ground_truth_tf.matrix().block<3,3>(0,0) << endl;
         printf("------------------------------------------------\n");
+
+/*
         Vector3f Tf = prog.GetSolution(transform_by_object[i].T, target_sol).cast<float>();
         Matrix3f Rf = prog.GetSolution(transform_by_object[i].R, target_sol).cast<float>();
         printf("Transform:\n");
@@ -814,39 +695,56 @@ int main(int argc, char** argv) {
         printf("\t\t%f, %f, %f\n", RfTRf(2, 0), RfTRf(2, 1), RfTRf(2, 2));
         printf("------------------------------------------------\n");
         printf("************************************************\n");
-
+*/
 
         detection.est_tf.setIdentity();
-        detection.est_tf.translation() = Tf;
-        detection.est_tf.matrix().block<3,3>(0,0) = Rf;
+//        detection.est_tf.translation() = Tf;
+//        detection.est_tf.matrix().block<3,3>(0,0) = Rf;
 
-        for (int scene_i=0; scene_i<f_est.rows(); scene_i++){
-          for (int face_j=0; face_j<f_est.cols(); face_j++){
-            // if this face is assigned, and this face is a member of this object,
-            // then display this point
-            if (f_est(scene_i, face_j) > 0.5 && B(i, face_j) > 0.5){
-              PointCorrespondence new_corresp;
-              new_corresp.scene_pt = scene_pts->at(scene_i);
-              new_corresp.model_pt = transformPoint(scene_pts->at(scene_i), detection.est_tf);
-              new_corresp.scene_ind = scene_i;
-              new_corresp.face_ind = face_j;
-              for (int k_v=0; k_v<vertices.cols(); k_v++){
-                if (C_est(scene_i, k_v) >= 0.0){
-                  new_corresp.model_verts.push_back( PointType(vertices(0, k_v), vertices(1, k_v), vertices(2, k_v)) );
-                  new_corresp.vert_weights.push_back( C_est(target_corresp_id, k_v) );
-                  new_corresp.vert_inds.push_back(k_v);
+        for (int quad_i=0; quad_i<optNumPointQuads; quad_i++){
+          PointQuadCorrespondence new_corresp;
+          new_corresp.scene_quad = point_quads[quad_i];
+          int inds[4] = {new_corresp.scene_quad.ind_a,
+                         new_corresp.scene_quad.ind_b,
+                         new_corresp.scene_quad.ind_c,
+                         new_corresp.scene_quad.ind_d};
+          new_corresp.model_faces.resize(4);
+          new_corresp.model_verts.resize(4);
+          new_corresp.model_verts_weights.resize(4);
+          new_corresp.model_verts_inds.resize(4);
+          new_corresp.est_model_points.resize(4);
+          // for each of the four member correspondences, go find what face and vert was corresponded to
+          for (int k=0; k<4; k++){
+            for (int face_j=0; face_j<f_est.cols(); face_j++){
+              if (f_est(inds[k], face_j) > 0.5){
+                new_corresp.model_faces[k] = face_j;
+                new_corresp.model_verts[k].resize(0);
+                new_corresp.model_verts_weights[k].resize(0);
+                new_corresp.model_verts_inds[k].resize(0);
+                new_corresp.est_model_points[k] = Vector3d::Zero();
+                double total_C = 0.0;
+                for (int vert_j=0; vert_j<vertices.cols(); vert_j++){
+                  if (C_est(inds[k], vert_j) > 0.0){
+                    new_corresp.model_verts[k].push_back( PointType(vertices(0, vert_j), vertices(1, vert_j), vertices(2, vert_j)) );
+                    new_corresp.model_verts_weights[k].push_back( C_est(inds[k], vert_j) );
+                    new_corresp.model_verts_inds[k].push_back( vert_j );
+                    new_corresp.est_model_points[k] += C_est(inds[k], vert_j)*vertices.col(vert_j);
+                    total_C += C_est(inds[k], vert_j);
+                  }
                 }
+                new_corresp.est_model_points[k] /= total_C;
+                continue;
               }
-              detection.correspondences.push_back(new_corresp);
             }
           }
+          detection.correspondences.push_back(new_corresp);
         }
         if (detection.correspondences.size() > 0)
           detections.push_back(detection);
       }
       reextract_solution = false;
 
-      objective = prog.GetSolution(phi).sum() + prog.GetSolution(alpha).sum();
+      //objective = prog.GetSolution(phi).sum() + prog.GetSolution(alpha).sum();
     }
 
     if (pending_redraw){
@@ -859,40 +757,79 @@ int main(int argc, char** argv) {
       viewer.setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "model pts gt");
  
       if (draw_mode == 0){
-        // Draw all correspondneces as lines
-        for (auto det = detections.begin(); det != detections.end(); det++){
-          for (auto corr = det->correspondences.begin(); corr != det->correspondences.end(); corr++){
-            std::stringstream ss_line;
-            ss_line << "raw_correspondence_line" << det->obj_ind << "-" << corr->face_ind << "-" << corr->scene_ind;
-            viewer.addLine<PointType, PointType> (corr->scene_pt, corr->model_pt, 255, 0, 255, ss_line.str ());
-          }
+        // Draw ground truth correspondences
+        for (int k=0; k<point_quads.size(); k++){
+          int p = correspondences_gt[point_quads[k].ind_a];
+          std::stringstream ss_line;
+          ss_line << "gt_correspondence_line" << k << "-a-" << p;
+          viewer.addLine<PointType, PointType> (actual_model_pts->at(point_quads[k].ind_a), scene_pts->at(p), 0, 255, 0, ss_line.str ());   
+
+          p = correspondences_gt[point_quads[k].ind_b];
+          ss_line.clear();
+          ss_line << "gt_correspondence_line" << k << "-b-" << p;
+          viewer.addLine<PointType, PointType> (actual_model_pts->at(point_quads[k].ind_b), scene_pts->at(p), 0, 255, 0, ss_line.str ());   
+
+          p = correspondences_gt[point_quads[k].ind_c];
+          ss_line.clear();
+          ss_line << "gt_correspondence_line" << k << "-c-" << p;
+          viewer.addLine<PointType, PointType> (actual_model_pts->at(point_quads[k].ind_c), scene_pts->at(p), 0, 255, 0, ss_line.str ());   
+
+          p = correspondences_gt[point_quads[k].ind_d];
+          ss_line.clear();
+          ss_line << "gt_correspondence_line" << k << "-d-" << p;
+          viewer.addLine<PointType, PointType> (actual_model_pts->at(point_quads[k].ind_d), scene_pts->at(p), 0, 255, 0, ss_line.str ());   
         }
 
-        // and add all ground truth
-        for (int k_s=0; k_s<scene_pts->size(); k_s++){
-          std::stringstream ss_line;
-          int k = correspondences_gt[k_s];
-          ss_line << "gt_correspondence_line" << k << "-" << k_s;
-          viewer.addLine<PointType, PointType> (actual_model_pts->at(k), scene_pts->at(k_s), 0, 255, 0, ss_line.str ());
-        }
-      } else if (draw_mode == 1) {
-        // Draw only desired correspondence
+        // Draw all correspondneces as lines
+        int num=0;
         for (auto det = detections.begin(); det != detections.end(); det++){
           for (auto corr = det->correspondences.begin(); corr != det->correspondences.end(); corr++){
-            if (corr->scene_ind == target_corresp_id){
+            int inds[4] = {corr->scene_quad.ind_a, corr->scene_quad.ind_b, corr->scene_quad.ind_c, corr->scene_quad.ind_d};
+            for (int k=0; k<4; k++){
               std::stringstream ss_line;
-              ss_line << "raw_correspondence_line" << det->obj_ind << "-" << corr->face_ind << "-" << corr->scene_ind;
-              viewer.addLine<PointType, PointType> (corr->scene_pt, corr->model_pt, 255, 0, 255, ss_line.str ());
+              ss_line << "correspondence_line_" << num;
+              num++;
+              viewer.addLine<PointType, PointType> (Vector3dToPoint(corr->est_model_points[k]), scene_pts->at(inds[k]), 255, 0, 255, ss_line.str());
             }
           }
         }
 
+      } else if (draw_mode == 1) {
+        int num=0;
+        for (auto det = detections.begin(); det != detections.end(); det++){
+          auto corr = &(det->correspondences[target_corresp_id]);
+          int inds[4] = {corr->scene_quad.ind_a, corr->scene_quad.ind_b, corr->scene_quad.ind_c, corr->scene_quad.ind_d};
+          for (int k=0; k<4; k++){
+            std::stringstream ss_line;
+            ss_line << "correspondence_line_" << num;
+            num++;
+            viewer.addLine<PointType, PointType> (Vector3dToPoint(corr->est_model_points[k]), scene_pts->at(inds[k]), 255, 0, 255, ss_line.str());
+          }
+        }
+
         // And desired ground truth
-        int k = correspondences_gt[target_corresp_id];
+        int k = target_corresp_id;
+        int p = correspondences_gt[point_quads[k].ind_a];
         std::stringstream ss_line;
-        ss_line << "gt_correspondence_line" << k << "-" << target_corresp_id;
-        viewer.addLine<PointType, PointType> (actual_model_pts->at(k), scene_pts->at(target_corresp_id), 0, 255, 0, ss_line.str ());
+        ss_line << "gt_correspondence_line" << k << "-a-" << p;
+        viewer.addLine<PointType, PointType> (actual_model_pts->at(point_quads[k].ind_a), scene_pts->at(p), 0, 255, 0, ss_line.str ());   
+
+        p = correspondences_gt[point_quads[k].ind_b];
+        ss_line.clear();
+        ss_line << "gt_correspondence_line" << k << "-b-" << p;
+        viewer.addLine<PointType, PointType> (actual_model_pts->at(point_quads[k].ind_b), scene_pts->at(p), 0, 255, 0, ss_line.str ());   
+
+        p = correspondences_gt[point_quads[k].ind_c];
+        ss_line.clear();
+        ss_line << "gt_correspondence_line" << k << "-c-" << p;
+        viewer.addLine<PointType, PointType> (actual_model_pts->at(point_quads[k].ind_c), scene_pts->at(p), 0, 255, 0, ss_line.str ());   
+
+        p = correspondences_gt[point_quads[k].ind_d];
+        ss_line.clear();
+        ss_line << "gt_correspondence_line" << k << "-d-" << p;
+        viewer.addLine<PointType, PointType> (actual_model_pts->at(point_quads[k].ind_d), scene_pts->at(p), 0, 255, 0, ss_line.str ());  
         // Re-draw the corresponded vertices larger
+        /*
         for (int k_v=0; k_v<vertices.cols(); k_v++){
           if (prog.GetSolution(C(target_corresp_id, k_v), target_sol) >= 0.0){
             std::stringstream ss_sphere;
@@ -901,10 +838,10 @@ int main(int argc, char** argv) {
               255,0,255, ss_sphere.str());
           }
         }
+        */
       } else if (draw_mode == 2) { 
         // Draw only the estimated transformed model, which is handled below
       }
-
 
 
       // Always draw the transformed and untransformed models
@@ -920,6 +857,7 @@ int main(int argc, char** argv) {
           } 
           char strname[100];
 
+          /*
           if (draw_mode == 2){
             // model pts
             for (int k=0; k<detections.size(); k++){
@@ -938,6 +876,7 @@ int main(int argc, char** argv) {
             viewer.addPolygon<PointType>(face_pts, 0.5, 0.5, 1.0, string(strname));
             transformPointCloud(*face_pts, *face_pts, models[i].scene_transform.inverse().cast<float>());
           }
+          */
           // scene pts
           sprintf(strname, "polygon%d_%d_tf", i, j);
           transformPointCloud(*face_pts, *face_pts, models[i].model_transform.cast<float>());

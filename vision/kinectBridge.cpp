@@ -22,10 +22,8 @@ int main(int argc, char *argv[])
     if(!lcm.good())
         return 1;
 
-    std::cout << "creating object" << std::endl;
+    std::cout << "creating factory" << std::endl;
     PointCloudFactory factory;
-    std::cout << "created object" << std::endl;
-
     lcm.subscribe("DEPTH_IMAGE", &PointCloudFactory::ingestDepthImage, &factory);
 
     while(0 == lcm.handle());

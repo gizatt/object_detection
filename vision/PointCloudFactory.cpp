@@ -2,12 +2,15 @@
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
 #include <pcl/filters/voxel_grid.h>
-#include "PointCloudFactory.hpp"
+#include "PointCloudFactory.hpp" 
+#include <pcl/visualization/cloud_viewer.h>
 
 typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 
+ static pcl::visualization::CloudViewer viewer ("cloud");
 
-  PointCloudFactory::PointCloudFactory() : voxeldx(0.1), voxeldy(0.1), voxeldz(0.1) {
+
+  PointCloudFactory::PointCloudFactory() : voxeldx(0.01), voxeldy(0.01), voxeldz(0.01) {
   }
 
   PointCloudFactory::PointCloudFactory(const float dx, const float dy, const float dz) : voxeldx(dx), voxeldy(dy), voxeldz(dz){
@@ -22,6 +25,10 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 
     PointCloud::Ptr cloud = PointCloud::Ptr (new PointCloud);
     cloud->points.resize(depthImage->width*depthImage->height);
+    std::cout << depthImage->width*depthImage->height << std::endl;
+    cloud->height = depthImage->height;
+    cloud->width = depthImage->width;
+
     int i;
     int j;
     for (i = 0; i < depthImage->height; i++){
@@ -32,6 +39,8 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
         cloud->points[index].y = (j - cy) * cloud->points[index].z / fy;
       }
     }
+  std::cerr << "PointCloud before filtering: " << cloud->width * cloud->height 
+       << " data points (" << pcl::getFieldsList (*cloud) << ").\n";
     return cloud;
 }
 
@@ -44,8 +53,9 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
   filter.setLeafSize(voxeldx, voxeldy, voxeldz);
   filter.filter(*cloud_filtered);
 
+
   std::cerr << "PointCloud size after filtering: " << cloud_filtered->width * cloud_filtered->height 
-       << " data points (" << pcl::getFieldsList (*cloud_filtered) << ").";
+       << " data points (" << pcl::getFieldsList (*cloud_filtered) << ").\n";
  
  return cloud_filtered;
 }
@@ -53,8 +63,9 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
   void PointCloudFactory::ingestDepthImage(const lcm::ReceiveBuffer* rbuf,
                 const std::string& chan, 
                 const kinect::depth_msg_t* depthImage) {
-    PointCloud::Ptr cloud = depthImageToPointCloud(depthImage);
-    PointCloud::Ptr cloud_filtered = voxelDownSample(cloud);
+   PointCloud::Ptr cloud = depthImageToPointCloud(depthImage);
+   PointCloud::Ptr cloud_filtered = voxelDownSample(cloud);
+   viewer.showCloud(cloud_filtered);
 
   }
 

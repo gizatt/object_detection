@@ -38,59 +38,6 @@ using namespace drake::parsers::urdf;
 
 const double kBigNumber = 100.0; // must be bigger than largest possible correspondance distance
 
-MatrixXd boundingBox2FaceSel(Matrix3Xd bb_pts){
-
-  // Get average per axis, which we'll use to distinguish
-  // the postive vs negative face on each axis
-  Vector3d avg;
-  avg.setZero();
-  for (int k=0; k<bb_pts.cols(); k++){
-    avg += bb_pts.col(k);
-  }
-  avg /= (double)bb_pts.cols();
-
-  // order in:
-  // cx << -1, 1, 1, -1, -1, 1, 1, -1;
-  // cy << 1, 1, 1, 1, -1, -1, -1, -1;
-  // cz << 1, 1, -1, -1, -1, -1, 1, 1;
-  MatrixXd F(6, bb_pts.cols());
-  F.setZero();
-
-  vector<vector<Vector3d>> out;
-  int k=0;
-  for (int xyz=0; xyz<3; xyz+=1){
-    for (int tar=-1; tar<=1; tar+=2){
-      for (int i=0; i<8; i++){
-        if ((bb_pts(xyz, i)-avg(xyz))*(double)tar >= 0){
-          F(k, i) = 1.0;
-        }
-      }
-      k++;
-    }
-  }
-  return F;
-}
-
-vector< vector<Vector3d> > boundingBox2QuadMesh(MatrixXd bb_pts){
-  // order in:
-  // cx << -1, 1, 1, -1, -1, 1, 1, -1;
-  // cy << 1, 1, 1, 1, -1, -1, -1, -1;
-  // cz << 1, 1, -1, -1, -1, -1, 1, 1;
-  vector<vector<Vector3d>> out;
-  for (int xyz=0; xyz<3; xyz+=1){
-    for (int tar=-1; tar<=1; tar+=2){
-      vector<Vector3d> face;
-      for (int i=0; i<8; i++){
-        if (bb_pts(xyz, i)*(double)tar >= 0){
-          face.push_back(bb_pts.col(i));
-        }
-      }
-      out.push_back(face);
-    }
-  }
-  return out;
-}
-
 struct Model {
   std::string name;
   bool matchable = true;

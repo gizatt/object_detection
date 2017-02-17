@@ -8,9 +8,8 @@
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
 #include <pcl/filters/voxel_grid.h>
-#include <pcl/impl/point_types.hpp>
 
-
+typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 
 //factory to filter/downsample frames of depth images.
 class PointCloudFactory
@@ -22,9 +21,9 @@ class PointCloudFactory
           float voxeldz;
 
           //input from LCM/Kinect
-          pcl::PointCloud<pcl::PointXYZ> depthImageToPointCloud(const kinect::depth_msg_t depthImage);
+          PointCloud::Ptr depthImageToPointCloud(const kinect::depth_msg_t* depthImage);
 
-          pcl::PointCloud<pcl::PointXYZ>::Ptr voxelDownSample(pcl::PointCloud<pcl::PointXYZ>);
+          PointCloud::Ptr voxelDownSample(PointCloud::Ptr cloud);
 
 
      public:

@@ -14,14 +14,18 @@
 #include "kinect/depth_msg_t.hpp"
 #include "PointCloudFactory.hpp"
 
-int main(int argc, char** argv)
+int main(int argc, char *argv[])
 {
+	std::cout << "Starting to listen for depth image messages" << std::endl;
     lcm::LCM lcm;
 
     if(!lcm.good())
         return 1;
 
+    std::cout << "creating object" << std::endl;
     PointCloudFactory factory;
+    std::cout << "created object" << std::endl;
+
     lcm.subscribe("DEPTH_IMAGE", &PointCloudFactory::ingestDepthImage, &factory);
 
     while(0 == lcm.handle());

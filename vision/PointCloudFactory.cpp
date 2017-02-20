@@ -16,6 +16,27 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
   PointCloudFactory::PointCloudFactory(const float dx, const float dy, const float dz) : voxeldx(dx), voxeldy(dy), voxeldz(dz){
   }
 
+
+// register float constant = 1.0f / 525; 
+// register int centerX = (pointcloud.width >> 1); 
+// int centerY = (pointcloud.height >> 1); 
+// register int depth_idx = 0; 
+// for (int v = -centerY; v < centerY; ++v) 
+// { 
+//         for (register int u = -centerX; u < centerX; ++u, ++depth_idx) 
+//         { 
+//                 pcl::PointXYZ& pt = pointcloud.points[depth_idx]; 
+//                 pt.z = depth_data[depth_idx] * 0.001f; 
+//                 pt.x = static_cast<float> (u) * pt.z * constant; 
+//                 pt.y = static_cast<float> (v) * pt.z * constant; 
+//         } 
+// } 
+// pointcloud.sensor_origin_.setZero (); 
+// pointcloud.sensor_orientation_.w () = 0.0f; 
+// pointcloud.sensor_orientation_.x () = 1.0f; 
+// pointcloud.sensor_orientation_.y () = 0.0f; 
+// pointcloud.sensor_orientation_.z () = 0.0f; 
+
   PointCloud::Ptr PointCloudFactory::depthImageToPointCloud(const kinect::depth_msg_t* depthImage) {
     float fx = 525.0;  // focal length x
     float fy = 525.0; //focal length y
@@ -28,7 +49,11 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
     std::cout << depthImage->width*depthImage->height << std::endl;
     cloud->height = depthImage->height;
     cloud->width = depthImage->width;
-
+    cloud.sensor_origin_.setZero (); 
+    cloud.sensor_orientation_.w () = 0.0f; 
+    cloud.sensor_orientation_.x () = 1.0f; 
+    cloud.sensor_orientation_.y () = 0.0f; 
+    cloud.sensor_orientation_.z () = 0.0f; 
     int i;
     int j;
     for (i = 0; i < depthImage->height; i++){
@@ -68,5 +93,13 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
    viewer.showCloud(cloud_filtered);
 
   }
+
+  void savePointCloud(PointCloud::Ptr cloud, string name) {
+     string fileName = "name" + ".pcd";
+     string directory = "pclObjectLibrary"
+     pcl::io::savePCDFileASCII (directory + "name" + ".pcd", cloud);
+     std::cerr << "Saved " << cloud.points.size () << " data points to "  + << std::endl;
+  }
+
 
 

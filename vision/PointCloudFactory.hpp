@@ -1,7 +1,7 @@
 
 #ifndef PointCloudFactory_H
 #define PointCloudFactory_H
-
+#include <string>
 #include <lcm/lcm-cpp.hpp>
 #include "kinect/depth_msg_t.hpp"
 #include <iostream>
@@ -35,6 +35,8 @@ class PointCloudFactory
           void ingestDepthImage(const lcm::ReceiveBuffer* rbuf,
                 const std::string& chan, 
                 const kinect::depth_msg_t* depthImage);
+
+          void savePointCloud(PointCloud::Ptr cloud, string name);
 
 };
 

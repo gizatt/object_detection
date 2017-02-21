@@ -1,4 +1,5 @@
 #include <iostream>
+#include <stdint.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
 #include <pcl/filters/voxel_grid.h>
@@ -10,6 +11,8 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 
  static pcl::visualization::CloudViewer viewer ("cloud");
 
+ static lcm::LCM messager;
+    
 
   PointCloudFactory::PointCloudFactory() : voxeldx(0.01), voxeldy(0.01), voxeldz(0.01) {
   }
@@ -20,51 +23,28 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
   void PointCloudFactory::ingestDepthImage(const lcm::ReceiveBuffer* rbuf,
                 const std::string& chan, 
                 const kinect::depth_msg_t* depthImage) {
+  std::cout << "Recieved Image" << std::endl;
+
+    if(!messager.good())
+        return;
    PointCloud::Ptr cloud = depthImageToPointCloud(depthImage);
    PointCloud::Ptr cloud_filtered = voxelDownSample(cloud);
-   viewer.showCloud(cloud);
-
-   //publish processed point cloud
-    lcm::LCM lcm;
-    if(!lcm.good())
-        return;
-   //kinect::pointcloud_t point_cloud;
-   //lcm.publish("KINECT_POINT_CLOUD", &point_cloud);
+   viewer.showCloud(cloud_filtered);
   }
 
-// register float constant = 1.0f / 525; 
-// register int centerX = (pointcloud.width >> 1); 
-// int centerY = (pointcloud.height >> 1); 
-// register int depth_idx = 0; 
-// for (int v = -centerY; v < centerY; ++v) 
-// { 
-//         for (register int u = -centerX; u < centerX; ++u, ++depth_idx) 
-//         { 
-//                 pcl::PointXYZ& pt = pointcloud.points[depth_idx]; 
-//                 pt.z = depth_data[depth_idx] * 0.001f; 
-//                 pt.x = static_cast<float> (u) * pt.z * constant; 
-//                 pt.y = static_cast<float> (v) * pt.z * constant; 
-//         } 
-// } 
-// pointcloud.sensor_origin_.setZero (); 
-// pointcloud.sensor_orientation_.w () = 0.0f; 
-// pointcloud.sensor_orientation_.x () = 1.0f; 
-// pointcloud.sensor_orientation_.y () = 0.0f; 
-// pointcloud.sensor_orientation_.z () = 0.0f; 
-
   PointCloud::Ptr PointCloudFactory::depthImageToPointCloud(const kinect::depth_msg_t* depthImage) {
-    float fx = 525.0;  // focal length x
-    float fy = 525.0; //focal length y
-    float cx = 319.5; // optical center x
-    float cy = 239.5;  // optical center y
-    float factor = 5000;  //for the 16-bit PNG files
-
+    
+    int32_t frameSize = depthImage->width*depthImage->height;
+    int centerX = (depthImage->width >> 1); 
+    int centerY = (depthImage->height >> 1); 
+    int index = 0;
+ 
+    //pcl
     PointCloud::Ptr cloud = PointCloud::Ptr (new PointCloud);
-    cloud->points.resize(depthImage->width*depthImage->height);
-    std::cout << depthImage->width*depthImage->height << std::endl;
+    cloud->points.resize(frameSize);
+    std::cout << frameSize << std::endl;
     cloud->height = depthImage->height;
     cloud->width = depthImage->width;
-
     //set ground coordinates
     cloud->sensor_origin_.setZero (); 
     cloud->sensor_orientation_.w () = 0.0f; 
@@ -72,17 +52,42 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
     cloud->sensor_orientation_.y () = 0.0f; 
     cloud->sensor_orientation_.z () = 0.0f; 
 
+    //botcore
+    // kinect::pointcloud_t point_cloud;
+    // point_cloud.n_points = frameSize;
+    // point_cloud.points.resize(frameSize);
+    // point_cloud.utime = 0;
+    // point_cloud.seq = 0;
+    // point_cloud.frame_id = "0";
+    // point_cloud.n_channels = 1;
+    // point_cloud.channel_names.resize(1);
+    // point_cloud.channels.resize(1);
+
     //project 2D map into 3D space
-    int i;
-    int j;
-    for (i = 0; i < depthImage->height; i++){
-      for(j = 0; j < depthImage->width; j++) {
-        int index = depthImage->height * i + j;
-        cloud->points[index].z = depthImage->depth_data[index]/factor;
-        cloud->points[index].x = (i - cx) * cloud->points[index].z / fx;
-        cloud->points[index].y = (j - cy) * cloud->points[index].z / fy;
+
+    //constant from pcl docs
+    float constant = 1.0f / 525;
+
+    for (int i = -centerY; i < centerY; ++i) {
+        for (int j = -centerX; j < centerX; ++j, ++index) {
+        float z = depthImage->depth_data[index] * 0.001f;
+        float x =  float(i) * z * constant;
+        float y = float(j) * z * constant;
+
+        //pcl cloud
+        cloud->points[index].z = z;
+        cloud->points[index].x = x;
+        cloud->points[index].y = y;
+
+        //bot core cloud
+        // point_cloud.points[index][0] = x;
+        // point_cloud.points[index][1] = y;
+        // point_cloud.points[index][2] = z;
+
       }
     }
+    //messager.publish("KINECT_POINT_CLOUD", &point_cloud);
+
     return cloud;
 }
 

@@ -16,6 +16,7 @@ To run kinect driver:
   (this will publish lcm depth image types)
   
 To run PointCloud Factory:
+  - cd vision
   - `mkdir build`
   - `cd build`
   - `make`

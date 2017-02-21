@@ -4,6 +4,7 @@
 #include <pcl/filters/voxel_grid.h>
 #include "PointCloudFactory.hpp" 
 #include <pcl/visualization/cloud_viewer.h>
+#include "kinect/pointcloud_t.hpp"
 
 typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 
@@ -16,6 +17,20 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
   PointCloudFactory::PointCloudFactory(const float dx, const float dy, const float dz) : voxeldx(dx), voxeldy(dy), voxeldz(dz){
   }
 
+  void PointCloudFactory::ingestDepthImage(const lcm::ReceiveBuffer* rbuf,
+                const std::string& chan, 
+                const kinect::depth_msg_t* depthImage) {
+   PointCloud::Ptr cloud = depthImageToPointCloud(depthImage);
+   PointCloud::Ptr cloud_filtered = voxelDownSample(cloud);
+   viewer.showCloud(cloud);
+
+   //publish processed point cloud
+    lcm::LCM lcm;
+    if(!lcm.good())
+        return;
+   //kinect::pointcloud_t point_cloud;
+   //lcm.publish("KINECT_POINT_CLOUD", &point_cloud);
+  }
 
 // register float constant = 1.0f / 525; 
 // register int centerX = (pointcloud.width >> 1); 
@@ -49,11 +64,15 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
     std::cout << depthImage->width*depthImage->height << std::endl;
     cloud->height = depthImage->height;
     cloud->width = depthImage->width;
-    cloud.sensor_origin_.setZero (); 
-    cloud.sensor_orientation_.w () = 0.0f; 
-    cloud.sensor_orientation_.x () = 1.0f; 
-    cloud.sensor_orientation_.y () = 0.0f; 
-    cloud.sensor_orientation_.z () = 0.0f; 
+
+    //set ground coordinates
+    cloud->sensor_origin_.setZero (); 
+    cloud->sensor_orientation_.w () = 0.0f; 
+    cloud->sensor_orientation_.x () = 1.0f; 
+    cloud->sensor_orientation_.y () = 0.0f; 
+    cloud->sensor_orientation_.z () = 0.0f; 
+
+    //project 2D map into 3D space
     int i;
     int j;
     for (i = 0; i < depthImage->height; i++){
@@ -64,8 +83,6 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
         cloud->points[index].y = (j - cy) * cloud->points[index].z / fy;
       }
     }
-  std::cerr << "PointCloud before filtering: " << cloud->width * cloud->height 
-       << " data points (" << pcl::getFieldsList (*cloud) << ").\n";
     return cloud;
 }
 
@@ -78,27 +95,21 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
   filter.setLeafSize(voxeldx, voxeldy, voxeldz);
   filter.filter(*cloud_filtered);
 
-
+  std::cerr << "PointCloud before filtering: " << cloud->width * cloud->height 
+       << " data points (" << pcl::getFieldsList (*cloud) << ").\n";
+       
   std::cerr << "PointCloud size after filtering: " << cloud_filtered->width * cloud_filtered->height 
        << " data points (" << pcl::getFieldsList (*cloud_filtered) << ").\n";
  
  return cloud_filtered;
 }
 
-  void PointCloudFactory::ingestDepthImage(const lcm::ReceiveBuffer* rbuf,
-                const std::string& chan, 
-                const kinect::depth_msg_t* depthImage) {
-   PointCloud::Ptr cloud = depthImageToPointCloud(depthImage);
-   PointCloud::Ptr cloud_filtered = voxelDownSample(cloud);
-   viewer.showCloud(cloud_filtered);
-
-  }
-
   void savePointCloud(PointCloud::Ptr cloud, string name) {
-     string fileName = "name" + ".pcd";
-     string directory = "pclObjectLibrary"
-     pcl::io::savePCDFileASCII (directory + "name" + ".pcd", cloud);
-     std::cerr << "Saved " << cloud.points.size () << " data points to "  + << std::endl;
+     string extension = ".pcd";
+     string fileName = name + extension;
+     string directory = "pclObjectLibrary";
+     pcl::io::savePCDFileASCII (directory + "name" + ".pcd",  *cloud);
+     std::cerr << "Saved " << cloud->points.size () << " data points to " << std::endl;
   }
 
 

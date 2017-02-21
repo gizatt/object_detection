@@ -19,5 +19,5 @@ To run PointCloud Factory:
   - `mkdir build`
   - `cd build`
   - `make`
-  run kinectPointCloud 
+  -  run kinectPointCloud 
   (this will subscribe to lcm depth images and publish filtered point cloud lcm messages)

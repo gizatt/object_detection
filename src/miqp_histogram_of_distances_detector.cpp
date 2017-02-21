@@ -363,31 +363,31 @@ int main(int argc, char** argv) {
   GurobiSolver gurobi_solver;
   MosekSolver mosek_solver;
 
-  prog.SetSolverOption("GUROBI", "OutputFlag", 1);
-  prog.SetSolverOption("GUROBI", "LogToConsole", 1);
-  prog.SetSolverOption("GUROBI", "LogFile", "loggg.gur");
-  prog.SetSolverOption("GUROBI", "DisplayInterval", 5);
+  prog.SetSolverOption(SolverType::kGurobi, "OutputFlag", 1);
+  prog.SetSolverOption(SolverType::kGurobi, "LogToConsole", 1);
+  prog.SetSolverOption(SolverType::kGurobi, "LogFile", "loggg.gur");
+  prog.SetSolverOption(SolverType::kGurobi, "DisplayInterval", 5);
 
   if (modelsNode["options"]["gurobi_int_options"]){
     for (auto iter = modelsNode["options"]["gurobi_int_options"].begin();
          iter != modelsNode["options"]["gurobi_int_options"].end();
          iter++){
-      prog.SetSolverOption("GUROBI", iter->first.as<string>(), iter->second.as<int>());
+      prog.SetSolverOption(SolverType::kGurobi, iter->first.as<string>(), iter->second.as<int>());
     }
   }
   if (modelsNode["options"]["gurobi_float_options"]){
     for (auto iter = modelsNode["options"]["gurobi_float_options"].begin();
          iter != modelsNode["options"]["gurobi_float_options"].end();
          iter++){
-      prog.SetSolverOption("GUROBI", iter->first.as<string>(), iter->second.as<float>());
+      prog.SetSolverOption(SolverType::kGurobi, iter->first.as<string>(), iter->second.as<float>());
     }
   }
 
-//  prog.SetSolverOption("GUROBI", "Cutoff", 50.0);
+//  prog.SetSolverOption(SolverType::kGurobi, "Cutoff", 50.0);
 // isn't doing anything... not invoking this tool right?
-//  prog.SetSolverOption("GUROBI", "TuneJobs", 8);
-//  prog.SetSolverOption("GUROBI", "TuneResults", 3);
-  //prog.SetSolverOption("GUROBI", )
+//  prog.SetSolverOption(SolverType::kGurobi, "TuneJobs", 8);
+//  prog.SetSolverOption(SolverType::kGurobi, "TuneResults", 3);
+  //prog.SetSolverOption(SolverType::kGurobi, )
 
 
   auto out = gurobi_solver.Solve(prog);

@@ -187,17 +187,17 @@ int main(int argc, char** argv) {
   GurobiSolver gurobi_solver;
   MosekSolver mosek_solver;
 
-  prog.SetSolverOption("GUROBI", "OutputFlag", 1);
-  prog.SetSolverOption("GUROBI", "LogToConsole", 0);
-  prog.SetSolverOption("GUROBI", "LogFile", "loggg.gur");
-  prog.SetSolverOption("GUROBI", "DisplayInterval", 1);
-//  prog.SetSolverOption("GUROBI", "MIPGap", 1E-12);
-//  prog.SetSolverOption("GUROBI", "Heuristics", 0.25);
-//  prog.SetSolverOption("GUROBI", "FeasRelaxBigM", 1E9);
-//  prog.SetSolverOption("GUROBI", "Cutoff", 50.0);
+  prog.SetSolverOption(SolverType::kGurobi, "OutputFlag", 1);
+  prog.SetSolverOption(SolverType::kGurobi, "LogToConsole", 0);
+  prog.SetSolverOption(SolverType::kGurobi, "LogFile", "loggg.gur");
+  prog.SetSolverOption(SolverType::kGurobi, "DisplayInterval", 1);
+//  prog.SetSolverOption(SolverType::kGurobi, "MIPGap", 1E-12);
+//  prog.SetSolverOption(SolverType::kGurobi, "Heuristics", 0.25);
+//  prog.SetSolverOption(SolverType::kGurobi, "FeasRelaxBigM", 1E9);
+//  prog.SetSolverOption(SolverType::kGurobi, "Cutoff", 50.0);
 // isn't doing anything... not invoking this tool right?
-//  prog.SetSolverOption("GUROBI", "TuneJobs", 8);
-//  prog.SetSolverOption("GUROBI", "TuneResults", 3);
+//  prog.SetSolverOption(SolverType::kGurobi, "TuneJobs", 8);
+//  prog.SetSolverOption(SolverType::kGurobi, "TuneResults", 3);
 
 
   double now = getUnixTime();

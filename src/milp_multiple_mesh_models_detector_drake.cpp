@@ -39,10 +39,12 @@ class PointCloudGenerator {
         opt_scene_sampling_mode_ = config["scene_sampling_mode"].as<int>();
       if (config["sample_distance"])
         opt_sample_distance_ = config["sample_distance"].as<double>();
+      if (config["num_rays"])
+        opt_num_rays_ = config["num_rays"].as<int>();
 
       // Load the model itself
       if (config["models"] == NULL){
-        std::runtime_error("Must specify models for point cloud generator to work with.");
+        runtime_error("Must specify models for point cloud generator to work with.");
       }
       // Model will be a RigidBodyTree.
       q_robot_.resize(0);
@@ -61,16 +63,87 @@ class PointCloudGenerator {
       }
     }
 
-    pcl::PointCloud<PointType>::Ptr generatePointCloud(){
+    pcl::PointCloud<PointType>::Ptr samplePointCloudFromSurface( ){
+      KinematicsCache<double> robot_kinematics_cache = robot_.doKinematics(q_robot_);
+
+      Matrix3Xd all_vertices;
+      DrakeShapes::TrianglesVector all_faces;
+      vector<double> face_cumulative_area = {0.0};
+
+      // Collect faces from all bodies in this configuration
+      for (auto iter = robot_.bodies.begin(); iter != robot_.bodies.end(); iter++) {
+        auto collision_elems = (*iter)->get_collision_element_ids();
+        for (auto collision_elem = collision_elems.begin();
+                  collision_elem != collision_elems.end();
+                  collision_elem++) {
+          auto element = robot_.FindCollisionElement(*collision_elem);
+          if (element->hasGeometry()){
+            const DrakeShapes::Geometry & geometry = element->getGeometry();
+            if (geometry.hasFaces()){
+              Matrix3Xd points;
+              geometry.getPoints(points);
+              all_vertices.conservativeResize(3, points.cols() + all_vertices.cols());
+              all_vertices.block(0, all_vertices.cols() - points.cols(), 3, points.cols());
+              DrakeShapes::TrianglesVector faces;
+              geometry.getFaces(faces);
+              // Calculate the face surface area, so we can do even sampling from the surface.
+              // See http://math.stackexchange.com/a/128999.
+              // Also use this loop to offset the vertex indices to the appropriate all_vertices indices.
+              for (auto face = faces.begin(); face != faces.end(); face++) {
+                Vector3d a = points.col( (*face)[0] );
+                Vector3d b = points.col( (*face)[1] );
+                Vector3d c = points.col( (*face)[2] );
+                double area = ((b - a).cross(c - a)).norm() / 2.;
+                face_cumulative_area.push_back(face_cumulative_area[face_cumulative_area.size()-1] + area);
+
+                (*face)[0] += (all_vertices.cols() - points.cols());
+                (*face)[1] += (all_vertices.cols() - points.cols());
+                (*face)[2] += (all_vertices.cols() - points.cols());
+              }
+              all_faces.insert(all_faces.end(), faces.begin(), faces.end());
+            } 
+          }
+        }
+      }
+
+      // Normalize cumulative areas.
+      for (int i=0; i<face_cumulative_area.size(); i++){
+        face_cumulative_area[i] /= face_cumulative_area[face_cumulative_area.size() - 1];
+      }
+
       pcl::PointCloud<PointType>::Ptr pc(new pcl::PointCloud<PointType> ());
 
-      printf("This is next!\n");
+      while (pc->size() < opt_num_rays_){
+        // Pick the face we'll sample from
+        double sample = randrange(0.0, 1.0 - 1E-12);
+        int k = 0;
+        for (k=0; k<face_cumulative_area.size(); k++){
+          if (face_cumulative_area[k] >= sample){
+            break;
+          }
+        }
+
+        Vector3d a = all_vertices.col(all_faces[k][0]);
+        Vector3d b = all_vertices.col(all_faces[k][1]);
+        Vector3d c = all_vertices.col(all_faces[k][2]);
+
+        double s1 = randrange(0.0, (b - a).norm());
+        double s2 = randrange(0.0, (c - a).norm());
+
+        if (s1*s1 + s2*s2 <= (c - b).squaredNorm()) {
+          Vector3d pt = a + 
+                        s1 * ((b - a) / (b - a).norm()) +
+                        s2 * ((c - a) / (c - a).norm());
+          pc->push_back(Vector3dToPoint(pt));
+        }
+      }
 
       return pc;
     }
 
   private:
     int opt_scene_sampling_mode_ = 0;
+    int opt_num_rays_ = 100;
     double opt_sample_distance_ = 0.05;
 
     RigidBodyTree<double> robot_;
@@ -109,18 +182,18 @@ int main(int argc, char** argv) {
 
   // Set up a point cloud generator
   if (config["point_cloud_generator_options"] == NULL){
-    std::runtime_error("Config needs a point cloud generator option set.");
+    runtime_error("Config needs a point cloud generator option set.");
   }
   PointCloudGenerator pcg(config["point_cloud_generator_options"]);
 
   // Generate a point set
-  pcl::PointCloud<PointType>::Ptr pc = pcg.generatePointCloud();
+  pcl::PointCloud<PointType>::Ptr pc = pcg.samplePointCloudFromSurface();
 
 
 
   // And set up our detector
   if (config["detector_options"] == NULL){
-    std::runtime_error("Config needs a detector option set.");
+    runtime_error("Config needs a detector option set.");
   }
   MILPMultipleMeshModelDetector detector(config["detector_options"]);
 

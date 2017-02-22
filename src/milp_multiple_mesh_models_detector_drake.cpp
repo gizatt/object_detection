@@ -82,8 +82,11 @@ class PointCloudGenerator {
             if (geometry.hasFaces()){
               Matrix3Xd points;
               geometry.getPoints(points);
+              // Transform them to this robot's frame
+              points = robot_.transformPoints(robot_kinematics_cache, points, 0, (*iter)->get_body_index());
+
               all_vertices.conservativeResize(3, points.cols() + all_vertices.cols());
-              all_vertices.block(0, all_vertices.cols() - points.cols(), 3, points.cols());
+              all_vertices.block(0, all_vertices.cols() - points.cols(), 3, points.cols()) = points;
               DrakeShapes::TrianglesVector faces;
               geometry.getFaces(faces);
               // Calculate the face surface area, so we can do even sampling from the surface.
@@ -115,25 +118,26 @@ class PointCloudGenerator {
 
       while (pc->size() < opt_num_rays_){
         // Pick the face we'll sample from
-        double sample = randrange(0.0, 1.0 - 1E-12);
+        double sample = randrange(1E-12, 1.0 - 1E-12);
         int k = 0;
         for (k=0; k<face_cumulative_area.size(); k++){
           if (face_cumulative_area[k] >= sample){
             break;
           }
         }
+        k -= 1;
 
         Vector3d a = all_vertices.col(all_faces[k][0]);
         Vector3d b = all_vertices.col(all_faces[k][1]);
         Vector3d c = all_vertices.col(all_faces[k][2]);
 
-        double s1 = randrange(0.0, (b - a).norm());
-        double s2 = randrange(0.0, (c - a).norm());
+        double s1 = randrange(0.0, 1.0); 
+        double s2 = randrange(0.0, 1.0);
 
-        if (s1*s1 + s2*s2 <= (c - b).squaredNorm()) {
+        if (s1 + s2 <= 1.0){
           Vector3d pt = a + 
-                        s1 * ((b - a) / (b - a).norm()) +
-                        s2 * ((c - a) / (c - a).norm());
+                        s1 * (b - a) +
+                        s2 * (c - a);
           pc->push_back(Vector3dToPoint(pt));
         }
       }
@@ -187,8 +191,7 @@ int main(int argc, char** argv) {
   PointCloudGenerator pcg(config["point_cloud_generator_options"]);
 
   // Generate a point set
-  pcl::PointCloud<PointType>::Ptr pc = pcg.samplePointCloudFromSurface();
-
+  pcl::PointCloud<PointType>::Ptr model_pts = pcg.samplePointCloudFromSurface();
 
 
   // And set up our detector
@@ -198,6 +201,15 @@ int main(int argc, char** argv) {
   MILPMultipleMeshModelDetector detector(config["detector_options"]);
 
 
+  // Visualize the generated model point cloud
+  pcl::visualization::PCLVisualizer viewer ("Point Collection");
+
+  pcl::visualization::PointCloudColorHandlerCustom<PointType> model_color_handler (model_pts, 128, 255, 255);
+  viewer.addPointCloud<PointType>(model_pts, model_color_handler, "model pts"); 
+  viewer.setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "model pts");
+
+  while (!viewer.wasStopped ())
+    viewer.spinOnce ();
 
   return 0;
 }

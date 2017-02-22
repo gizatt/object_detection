@@ -6,6 +6,7 @@ export PATH=$OD_ROOT/build/bin:$PATH
 
 export LIBRARY_PATH=$OD_ROOT/build/lib:$LIBRARY_PATH
 export LD_LIBRARY_PATH=$OD_ROOT/build/lib:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=$OD_ROOT/build/lib/vtk-5.10:$LD_LIBRARY_PATH
 export CLASSPATH=$CLASSPATH:$OD_ROOT/build/share/java/lcmtypes_bot2-core.jar
 export CLASSPATH=$CLASSPATH:$OD_ROOT/build/share/java/lcmtypes_bot2-frames.jar
 export CLASSPATH=$CLASSPATH:$OD_ROOT/build/share/java/lcmtypes_bot2-procman.jar

@@ -46,3 +46,7 @@ detector_options:
         MIPGap: 0.0
         #Heuristics: 0.05
  
+    models:
+      - urdf: "../urdf/cube.urdf"
+        q0: [0.5, 0, 0, 0, 0, 0.2]
+        

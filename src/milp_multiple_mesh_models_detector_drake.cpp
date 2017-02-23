@@ -218,7 +218,7 @@ class MILPMultipleMeshModelDetector {
       vector<int> face_body_map;
       
       // Collect faces from each body
-      int k=0;
+      int k=1;
       for (auto iter = robot_.bodies.begin(); iter != robot_.bodies.end(); iter++) {
         auto collision_elems = (*iter)->get_collision_element_ids();
         for (auto collision_elem = collision_elems.begin();
@@ -410,7 +410,7 @@ class MILPMultipleMeshModelDetector {
         AlphaConstrNeg.block(0, 5+all_vertices.cols(), 1, B.cols()) = -kBigNumber*B.row(l); // multiplies f_i
 
         for (int i=0; i<scene_pts.cols(); i++){
-          printf("=");
+          printf("\r\tgenerating guess for body (%d)/(%d), point (%d)/(%d)", l, (int)robot_.bodies.size(), i, (int)scene_pts.cols());
 
           // constrain L-1 distance slack based on correspondences
           // phi_i >= 1^T alpha_{i}
@@ -531,7 +531,7 @@ class MILPMultipleMeshModelDetector {
           prog.SetInitialGuess(transform_by_object[i].R, tf.matrix().block<3, 3>(0, 0));
         }
 
-        // for every scene point, project it down onto the models at the supplied TF to get closest face, and use 
+        // for every scene point, project it down onto the models at the supplied TF to get closest object, and use 
         // that face assignment as our guess if the distance isn't too great
         VectorXd search_phi;
         Matrix3Xd search_norm;
@@ -543,12 +543,55 @@ class MILPMultipleMeshModelDetector {
 
         MatrixXd f0(scene_pts.cols(), F.rows());
         f0.setZero();
+        printf("Starting to backsolve initial guess...\n");
         for (int i=0; i<scene_pts.cols(); i++){
+          printf("\r\tgenerating guess for point (%d)/(%d)", i, (int)scene_pts.cols());
           // Find the face it's closest to on body i
-          
+          double dist = std::numeric_limits<double>::infinity();
+          int face_ind = 0;
+          Vector3d closest_pt;
+          for (int j=0; j<all_faces.size(); j++){
+            if (B(search_body_idx[i], j) > 0.5){
+              // We're looking for argmin_{pt_proj} ||pt - pt_proj||
+              //   such that pt_proj = verts * C
+              MathematicalProgram prog_proj;
+              auto pt_proj = prog_proj.NewContinuousVariables(3, 1, "pt_proj");
 
-          if (search_phi[i] < 0.1){
-            f0(i, search_body_idx[i]) = 1;
+              // pt_proj is an affine combination of vertices
+              Matrix3Xd verts(3, 3);
+              for (int k=0; k<3; k++){
+                verts.col(k) = all_vertices.col(all_faces[j][k]);
+              }
+              verts = robot_.transformPoints(robot_kinematics_cache_corrupt, verts, 0, search_body_idx[i]);
+              auto C = prog_proj.NewContinuousVariables(3, 1, "C");
+              prog_proj.AddBoundingBoxConstraint(0.0, 1.0, C);
+              prog_proj.AddLinearEqualityConstraint(VectorXd::Ones(3).transpose(), 1.0, C);
+              Matrix3Xd A(3, 3 + 3);
+              A.block(0, 0, 3, 3) = MatrixXd::Identity(3, 3);
+              A.block(0, 3, 3, 3) = -verts;
+              prog_proj.AddLinearEqualityConstraint(A, Vector3d::Zero(), {pt_proj, C});
+
+              // minimize quadratic error between our pt and the projected point
+              prog_proj.AddL2NormCost(MatrixXd::Identity(3, 3), scene_pts.col(i), pt_proj);
+
+              auto out = prog_proj.Solve();
+
+              if (out >= 0){
+                Vector3d pt_proj_sol = prog_proj.GetSolution(pt_proj);
+                double new_dist = (pt_proj_sol - scene_pts.col(i)).norm();
+                if (new_dist < dist){
+                  dist = new_dist;
+                  face_ind = j;
+                  closest_pt = pt_proj_sol;
+                }
+              } else {
+                printf("optimization returned negative number? that should have been feasible!\n");
+              }
+            }
+          }
+
+          if (dist < 0.1){
+            f0(i, face_ind) = 1;
           }
           // else it's an outlier point
         }

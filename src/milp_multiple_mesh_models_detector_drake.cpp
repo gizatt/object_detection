@@ -183,10 +183,8 @@ class MILPMultipleMeshModelDetector {
         optPhiMax_ = config["phi_max"].as<double>();
       if (config["use_initial_guess"])
         optUseInitialGuess_ = config["use_initial_guess"].as<bool>();
-      if (config["rot_corruption"])
-        optRotCorruption_ = config["rot_corruption"].as<double>();
-      if (config["trans_corruption"])
-        optTransCorruption_ = config["trans_corruption"].as<double>();
+      if (config["corruption_amount"])
+        optCorruption_ = config["corruption_amount"].as<double>();
 
       config_ = config;
 
@@ -520,49 +518,41 @@ class MILPMultipleMeshModelDetector {
       if (optUseInitialGuess_){
         // Corruption should be done from q_gt, then recover maximal coordinates from transform queries,
         // get mesh and do projection using get_closest_points in drake 
-        /*
+        VectorXd corruption_vec(q_robot_gt_.rows()); 
+        for (int i=0; i<corruption_vec.rows(); i++){
+          corruption_vec[i] = randrange(-optCorruption_, optCorruption_);
+        }
+        VectorXd q_robot_corrupt = q_robot_gt_ + corruption_vec;
+        KinematicsCache<double> robot_kinematics_cache_corrupt = robot_.doKinematics(q_robot_corrupt);
 
-        // corrupt scene tfs by a bit
-        for (int model_i=0; model_i<robot_.bodies.size(); model_i++){
-          Affine3d scene_tf_corruption;
-          scene_tf_corruption.setIdentity();
-          scene_tf_corruption.translation() = Vector3d(randrange(-optTransCorruption_, optTransCorruption_),
-                                                       randrange(-optTransCorruption_, optTransCorruption_),
-                                                       randrange(-optTransCorruption_, optTransCorruption_));
-          scene_tf_corruption.rotate(AngleAxisd(randrange(-optRotCorruption_, optRotCorruption_), Vector3d::UnitZ()));
-          scene_tf_corruption.rotate(AngleAxisd(randrange(-optRotCorruption_, optRotCorruption_), Vector3d::UnitY()));
-          scene_tf_corruption.rotate(AngleAxisd(randrange(-optRotCorruption_, optRotCorruption_), Vector3d::UnitX()));
-          scene_tf_corruption  = scene_tf_corruption * 
-
-          prog.SetInitialGuess(transform_by_object[model_i].T, scene_tf_corruption.translation());
-          prog.SetInitialGuess(transform_by_object[model_i].R, scene_tf_corruption.matrix().block<3, 3>(0, 0));
+        for (int i=0; i<robot_.bodies.size(); i++){
+          auto tf = robot_.relativeTransform(robot_kinematics_cache_corrupt, 0, robot_.bodies[i]->get_body_index());
+          prog.SetInitialGuess(transform_by_object[i].T, tf.translation());
+          prog.SetInitialGuess(transform_by_object[i].R, tf.matrix().block<3, 3>(0, 0));
         }
 
         // for every scene point, project it down onto the models at the supplied TF to get closest face, and use 
-        // that face assignment as our guess
-        printf("Doing a bunch of inefficient point projections...\n");
+        // that face assignment as our guess if the distance isn't too great
+        VectorXd search_phi;
+        Matrix3Xd search_norm;
+        Matrix3Xd search_x;
+        Matrix3Xd search_body_x;
+        vector<int> search_body_idx;
+        robot_.collisionDetectFromPoints(robot_kinematics_cache_corrupt, scene_pts, search_phi,
+                    search_norm, search_x, search_body_x, search_body_idx, false);
 
-        // Each row is a set of affine coefficients relating the scene point to a combination
-        // of vertices on a single face of the model
-        //MatrixXd C0(scene_pts.cols(), vertices.cols());
-        //C0.setZero();
-        // Binary variable selects which face is being corresponded to
         MatrixXd f0(scene_pts.cols(), F.rows());
         f0.setZero();
         for (int i=0; i<scene_pts.cols(); i++){
-          printf("\rGenerating guess for point (%d)/(%d)", i, (int)scene_pts.cols());
-          double dist = std::numeric_limits<double>::infinity();
-          Vector3d closest_pt;
-          int model_ind;
-          int face_ind;
-          projectOntoModelSet(pointToVector3d(scene_pts->at(i)), corrupted_models, &dist, &closest_pt, &model_ind, &face_ind);
-          if (dist < 0.1){
-            f0(i, face_ind) = 1;
+          // Find the face it's closest to on body i
+          
+
+          if (search_phi[i] < 0.1){
+            f0(i, search_body_idx[i]) = 1;
           }
           // else it's an outlier point
         }
         prog.SetInitialGuess(f, f0);
-        */
       }
 
       //  prog.SetSolverOption(SolverType::kGurobi, "Cutoff", 50.0);
@@ -595,8 +585,7 @@ class MILPMultipleMeshModelDetector {
     bool optAllowOutliers_ = true;
     double optPhiMax_ = 0.1;
     bool optUseInitialGuess_ = false;
-    double optRotCorruption_ = 0.1;
-    double optTransCorruption_ = 0.1;
+    double optCorruption_ = 100.0;
 
 };
 

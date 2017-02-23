@@ -30,8 +30,7 @@ detector_options:
     allow_outliers: false
     phi_max: 0.01
     use_initial_guess: true
-    rot_corruption: 0.05
-    trans_corruption: 0.05
+    corruption_amount: 0.000
 
     gurobi_int_options:
         #MIPFocus: 1
@@ -49,4 +48,3 @@ detector_options:
     models:
       - urdf: "../urdf/cube.urdf"
         q0: [0.5, 0, 0, 0, 0, 0.2]
-        

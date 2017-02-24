@@ -10,6 +10,7 @@
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/visualization/cloud_viewer.h>
 using namespace std;
+
 typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 
 //factory to filter/downsample frames of depth images.
@@ -20,24 +21,15 @@ class PointCloudFactory
           float voxeldx;
           float voxeldy;
           float voxeldz;
-
-          //input from LCM/Kinect
-          PointCloud::Ptr depthImageToPointCloud(const kinect::depth_msg_t* depthImage);
-
-          PointCloud::Ptr voxelDownSample(PointCloud::Ptr cloud);
+          PointCloudFactory();
 
 
      public:
-          PointCloudFactory();
+          static PointCloud::Ptr depthImageToPointCloud(const kinect::depth_msg_t* depthImage);
 
-          PointCloudFactory(const float dx, const float dy, const float dz);
-          
-          void ingestDepthImage(const lcm::ReceiveBuffer* rbuf,
-                const std::string& chan, 
-                const kinect::depth_msg_t* depthImage);
-
-          void savePointCloud(PointCloud::Ptr cloud, string name);
-
+          static PointCloud::Ptr voxelDownSample(PointCloud::Ptr cloud);
+    
+          static PointCloud::Ptr PointCloudFactory::zPassThroughFilter(PointCloud::Ptr cloud, float zLowerBound, float zUpperBound);
 };
 
 #endif

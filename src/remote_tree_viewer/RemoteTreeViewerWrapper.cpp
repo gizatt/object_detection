@@ -66,15 +66,33 @@ void RemoteTreeViewerWrapper::publishPointCloud(const Matrix3Xd pts, vector<stri
 }
 
 void RemoteTreeViewerWrapper::publishRigidBodyTree(const RigidBodyTree<double>& tree, const VectorXd q, vector<string> path){
-
+  auto kinematics_cache = tree.doKinematics(q);
+  for (const auto& body : tree.bodies) {
+    for (const auto& collision_elem_id : body->get_collision_element_ids()) {
+      auto element = tree.FindCollisionElement(collision_elem_id);
+      if (element->hasGeometry()){
+        vector<string> full_name = path;
+        full_name.push_back(body->get_name());
+        publishGeometry(element->getGeometry(),
+          tree.relativeTransform(kinematics_cache, 0, body->get_body_index()), 
+          full_name);
+      }
+    }
+  }
 }
 
 void RemoteTreeViewerWrapper::publishRigidBody(const RigidBody<double>& body, Affine3d tf, vector<string> path){
-
 }
 
 void RemoteTreeViewerWrapper::publishGeometry(const Geometry& geometry, Affine3d tf, vector<string> path){
   long long int now = getUnixTime() * 1000 * 1000;
+
+  // Short-circuit to points if the passed geometry is a set of mesh points
+  if (geometry.getShape() == MESH_POINTS){
+    Matrix3Xd pts;
+    geometry.getPoints(pts);
+    publishPointCloud(pts, path);
+  }
 
   // Extract std::vector-formatted translation and quaternion from the tf
   vector<double> translation = {
@@ -118,14 +136,33 @@ void RemoteTreeViewerWrapper::publishGeometry(const Geometry& geometry, Affine3d
       }
       break;
     case SPHERE:
+      {
+      const Sphere * sphere = static_cast<const Sphere *>(&geometry);
+      j["setgeometry"][0]["geometry"]["type"] = string("sphere");
+      j["setgeometry"][0]["geometry"]["radius"] = sphere->radius;
+      }
       break;
     case CYLINDER:
+      {
+      const Cylinder * cylinder = static_cast<const Cylinder *>(&geometry);
+      j["setgeometry"][0]["geometry"]["type"] = string("cylinder");
+      j["setgeometry"][0]["geometry"]["radius"] = cylinder->radius;
+      j["setgeometry"][0]["geometry"]["length"] = cylinder->length;
+      }
       break;
     case MESH:
+      {
+      const Mesh * mesh = static_cast<const Mesh *>(&geometry);
+      j["setgeometry"][0]["geometry"]["type"] = string("mesh_file");
+      j["setgeometry"][0]["geometry"]["filename"] = mesh->resolved_filename_;
+      }
       break;
-    case MESH_POINTS:
-      break;
-    case CAPSULE:
+    case CAPSULE:      {
+      const Capsule * capsule = static_cast<const Capsule *>(&geometry);
+      j["setgeometry"][0]["geometry"]["type"] = string("capsule");
+      j["setgeometry"][0]["geometry"]["radius"] = capsule->radius;
+      j["setgeometry"][0]["geometry"]["length"] = capsule->length;
+      }
       break;
     default:
       cout << "Unsupported geometry type " << geometry.getShape() << ", sorry!" << cout;

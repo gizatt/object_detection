@@ -1,0 +1,6 @@
+add_library(RemoteTreeViewerWrapper SHARED RemoteTreeViewerWrapper.cpp)
+target_link_libraries(RemoteTreeViewerWrapper lcm drakeRBM drakeOptimization drakeJoints drakeCommon z pthread)
+
+add_executable(testRemoteTreeViewerWrapper testRemoteTreeViewerWrapper.cpp)
+target_link_libraries(testRemoteTreeViewerWrapper lcm drakeRBM drakeLcm drakeMultibodyParsers drakeOptimization drakeJoints drakeShapes drakeCommon yaml-cpp z pthread RemoteTreeViewerWrapper)
+install(TARGETS testRemoteTreeViewerWrapper DESTINATION bin)

@@ -4,6 +4,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
 include_directories(${CMAKE_INSTALL_PREFIX})
 include_directories(${CMAKE_INSTALL_PREFIX}/include)
+include_directories(${CMAKE_INSTALL_PREFIX}/include/lcmtypes)
 
 set(EIGEN3_INCLUDE_DIR ${CMAKE_INSTALL_PREFIX}/include/eigen3)
 include_directories(${EIGEN3_INCLUDE_DIR}) 
@@ -15,6 +16,8 @@ link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
 
 find_package(OpenCV)
+
+add_subdirectory(remote_tree_viewer)
 
 add_executable(testMcCormickEnvelope testMcCormickEnvelope.cpp)
 target_link_libraries(testMcCormickEnvelope lcm drakeRBM drakeOptimization drakeJoints drakeCommon yaml-cpp ${PCL_LIBRARIES} z ${OpenCV_LIBS} pthread)
@@ -39,7 +42,7 @@ target_link_libraries(milp_multiple_mesh_models_detector lcm drakeMultibodyParse
 install(TARGETS milp_multiple_mesh_models_detector DESTINATION bin)
 
 add_executable(milp_multiple_mesh_models_detector_drake milp_multiple_mesh_models_detector_drake.cpp)
-target_link_libraries(milp_multiple_mesh_models_detector_drake lcm drakeMultibodyParsers drakeRBM drakeOptimization drakeShapes drakeJoints drakeCommon yaml-cpp ${PCL_LIBRARIES} z ${OpenCV_LIBS} pthread)
+target_link_libraries(milp_multiple_mesh_models_detector_drake lcm drakeMultibodyParsers drakeRBM drakeOptimization drakeShapes drakeJoints drakeCommon drakeLcm drakeRigidBodyPlant drake_lcmtypes yaml-cpp ${PCL_LIBRARIES} z ${OpenCV_LIBS} pthread)
 install(TARGETS milp_multiple_mesh_models_detector_drake DESTINATION bin)
 
 add_executable(miqp_4pcs_mesh_model_detector miqp_4pcs_mesh_model_detector.cpp)

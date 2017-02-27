@@ -31,10 +31,6 @@ double pointDistance(const PointType& pt1, const PointType& pt2){
   return sqrtf(powf(pt1.x - pt2.x, 2) + powf(pt1.y - pt2.y, 2) + powf(pt1.z - pt2.z, 2));
 }
 
-static inline double randrange(double min, double max){
-  return (((double)rand()) / RAND_MAX)*(max - min) + min;
-}
-
 #include <time.h>
 // call this function to start a nanosecond-resolution timer
 struct timespec timer_start(){

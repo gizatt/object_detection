@@ -24,6 +24,10 @@ inline bool is_nan(const Eigen::MatrixBase<Derived>& x)
    return ((x.array() == x.array())).all();
 }
 
+static inline double randrange(double min, double max){
+  return (((double)rand()) / RAND_MAX)*(max - min) + min;
+}
+
 Eigen::Transform<double, 3, Eigen::Isometry>
 getAverageTransform(std::vector<Eigen::Transform<double, 3, Eigen::Isometry>> transforms){
   Eigen::Transform<double, 3, Eigen::Isometry> avg_transform;

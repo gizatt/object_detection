@@ -7,7 +7,6 @@
 #include <iostream>
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
-#include <pcl/filters/voxel_grid.h>
 
 using namespace std;
 
@@ -32,6 +31,9 @@ class PointCloudFactory
           static PointCloud::Ptr voxelDownSample(PointCloud::Ptr cloud,float dx, float dy, float dz);
     
           static PointCloud::Ptr zPassThroughFilter(PointCloud::Ptr cloud, float zLowerBound, float zUpperBound);
+
+          static PointCloud::Ptr statOutlierRemoval(PointCloud::Ptr cloud, int meanK, float stdDevMulThreshold);
+
 };
 
 #endif

@@ -32,6 +32,8 @@ static pcl::visualization::CloudViewer viewer("Cloud Viewer");
         	//maybe init with some shared params
              ~PointCloudHandler() {
 				viewer.runOnVisualizationThreadOnce (viewInit);
+				viewer.runOnVisualizationThread(viewCloud);
+
 			}
 
      		///////////////////////////////////////////////////////////////
@@ -44,9 +46,16 @@ static pcl::visualization::CloudViewer viewer("Cloud Viewer");
                 const kinect::depth_msg_t* depthImage) {
 
                 printf("Received depth message on channel \"%s\":\n", chan.c_str());
-				currentPointCloud = PointCloudFactory::depthImageToPointCloud(depthImage);
- 				viewer.runOnVisualizationThread(viewCloud);
- 				// publishPointCloud(currentPointCloud);
+				PointCloud::Ptr pointCloud = PointCloudFactory::depthImageToPointCloud(depthImage);
+				std::cerr << "PointCloud size: " << pointCloud->width * pointCloud->height <<  ").\n";
+				//pointCloud = PointCloudFactory::statOutlierRemoval(pointCloud, 100, 1.0);
+				pointCloud = PointCloudFactory::voxelDownSample(pointCloud,.01, .01, .01);
+
+				viewer.showCloud(pointCloud);
+
+				std::cerr << "PointCloud after: " << pointCloud->width * pointCloud->height <<  ").\n";
+
+ 			    publishPointCloud(pointCloud);
  			}
 
 			int readModelPCDFile(string pathToFile){
@@ -87,9 +96,9 @@ static pcl::visualization::CloudViewer viewer("Cloud Viewer");
     			point_cloud.channel_names.resize(1);
     			point_cloud.channels.resize(1, std::vector<float>(frameSize));
     			for(size_t i = 0; i < frameSize; ++i) {
-    				cloud->points[i].x = currentPointCloud->points[i].x;
-    				cloud->points[i].y = currentPointCloud->points[i].y;
-    				cloud->points[i].z = currentPointCloud->points[i].z;
+    				cloud->points[i].x = cloud->points[i].x;
+    				cloud->points[i].y = cloud->points[i].y;
+    				cloud->points[i].z = cloud->points[i].z;
   				}
 
    				messager.publish("KINECT_POINT_CLOUD_RAW", &point_cloud);
@@ -106,7 +115,6 @@ static pcl::visualization::CloudViewer viewer("Cloud Viewer");
     		static void viewCloud (pcl::visualization::PCLVisualizer& viewer) {
     			std::stringstream ss;
 				viewer.addText (ss.str(), 200, 300, "text", 0);
-				viewer.updatePointCloud(currentPointCloud);
     		}
   	};
 

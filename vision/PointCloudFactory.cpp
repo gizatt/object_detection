@@ -5,6 +5,7 @@
 #include "PointCloudFactory.hpp" 
 #include <pcl/filters/conditional_removal.h>
 #include <pcl/filters/passthrough.h>
+#include <pcl/filters/statistical_outlier_removal.h>
 
 
 
@@ -77,9 +78,21 @@ PointCloud::Ptr PointCloudFactory::zPassThroughFilter(PointCloud::Ptr cloud, flo
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered (new pcl::PointCloud<pcl::PointXYZ>);
   pcl::PassThrough<pcl::PointXYZ> pass;
   pass.setInputCloud (cloud);
-  pass.setFilterFieldName ("z_dir");
-  pass.setFilterLimits (0.0, 1.0);
+  pass.setFilterFieldName ("z");
+  pass.setFilterLimits (zLowerBound, zUpperBound);
   pass.filter (*cloud_filtered);
+  return cloud_filtered;
+}
+
+PointCloud::Ptr PointCloudFactory::statOutlierRemoval(PointCloud::Ptr cloud, int meanK, float stdDevMulThreshold) {
+
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered (new pcl::PointCloud<pcl::PointXYZ>);
+    // Create the filtering object
+  pcl::StatisticalOutlierRemoval<pcl::PointXYZ> filter;
+  filter.setInputCloud (cloud);
+  filter.setMeanK (meanK);
+  filter.setStddevMulThresh (stdDevMulThreshold);
+  filter.filter (*cloud_filtered);
   return cloud_filtered;
 }
 

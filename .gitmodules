@@ -10,3 +10,6 @@
 [submodule "libfreenect2"]
 	path = libfreenect2
 	url = https://github.com/ChristopherSweeney/libfreenect2.git
+[submodule "json"]
+	path = json
+	url = https://github.com/nlohmann/json

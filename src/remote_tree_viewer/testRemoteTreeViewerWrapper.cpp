@@ -3,6 +3,7 @@
 #include "drake/multibody/rigid_body_tree.h"
 #include "drake/multibody/parsers/urdf_parser.h"
 
+using namespace std;
 using namespace Eigen;
 using namespace drake::parsers::urdf;
 
@@ -58,7 +59,10 @@ int main(int argc, char ** argv){
 					   {"test_capsule"});
 
 	RigidBodyTree<double> tree;
-	AddModelInstanceFromUrdfFileWithRpyJointToWorld("/home/gizatt/object_detection/drake/drake/examples/kuka_iiwa_arm/urdf/iiwa14.urdf", &tree);
+	string iiwa_path;
+	iiwa_path += getenv("OD_ROOT");
+	iiwa_path += "/drake/drake/examples/kuka_iiwa_arm/urdf/iiwa14.urdf";
+	AddModelInstanceFromUrdfFileWithRpyJointToWorld(iiwa_path, &tree);
 	Affine3d tf_robot;
 	tf_robot.setIdentity();
 	tf_robot.translation()[1] = -y_size*2;

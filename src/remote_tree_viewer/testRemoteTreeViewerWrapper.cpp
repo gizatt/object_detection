@@ -28,7 +28,10 @@ int main(int argc, char ** argv){
 		pts.col(i) = xyz;
 	}
 	rm.publishPointCloud(pts, {"test_pc"});
-	printf("Published point cloud with %d points.\n", n_points);
+	rm.publishLine(pts, {"test_line"});
+
+
+
 
 	Affine3d tf_box;
 	tf_box.setIdentity();

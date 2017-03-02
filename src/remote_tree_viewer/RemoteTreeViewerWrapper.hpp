@@ -8,6 +8,8 @@ class RemoteTreeViewerWrapper {
   public:
     RemoteTreeViewerWrapper();
     void publishPointCloud(const Eigen::Matrix3Xd pts, std::vector<std::string> path);
+    void publishLine(const Eigen::Matrix3Xd pts, std::vector<std::string> path);
+    void publishRawMesh(const Eigen::Matrix3Xd verts, std::vector<Eigen::Vector3i> tris, std::vector<std::string> path);
     void publishRigidBodyTree(const RigidBodyTree<double>& tree, const Eigen::VectorXd q, std::vector<std::string> path);
     void publishRigidBody(const RigidBody<double>& body, Eigen::Affine3d tf, std::vector<std::string> path);
     void publishGeometry(const DrakeShapes::Geometry& geometry, Eigen::Affine3d tf, std::vector<std::string> path);

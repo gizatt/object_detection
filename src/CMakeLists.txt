@@ -42,7 +42,7 @@ target_link_libraries(milp_multiple_mesh_models_detector lcm drakeMultibodyParse
 install(TARGETS milp_multiple_mesh_models_detector DESTINATION bin)
 
 add_executable(milp_multiple_mesh_models_detector_drake milp_multiple_mesh_models_detector_drake.cpp)
-target_link_libraries(milp_multiple_mesh_models_detector_drake lcm drakeMultibodyParsers drakeRBM drakeOptimization drakeShapes drakeJoints drakeCommon drakeLcm drakeRigidBodyPlant drake_lcmtypes yaml-cpp ${PCL_LIBRARIES} z ${OpenCV_LIBS} pthread)
+target_link_libraries(milp_multiple_mesh_models_detector_drake lcm RemoteTreeViewerWrapper drakeMultibodyParsers drakeRBM drakeOptimization drakeShapes drakeJoints drakeCommon drakeLcm drakeRigidBodyPlant drake_lcmtypes yaml-cpp ${PCL_LIBRARIES} z ${OpenCV_LIBS} pthread)
 install(TARGETS milp_multiple_mesh_models_detector_drake DESTINATION bin)
 
 add_executable(miqp_4pcs_mesh_model_detector miqp_4pcs_mesh_model_detector.cpp)

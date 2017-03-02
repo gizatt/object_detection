@@ -9,12 +9,14 @@
 
 #include "drake/multibody/rigid_body_tree.h"
 #include "drake/multibody/parsers/urdf_parser.h"
+#include "drake/multibody/rigid_body_plant/drake_visualizer.h"
 #include "drake/solvers/mathematical_program.h"
 #include "drake/solvers/gurobi_solver.h"
 #include "drake/solvers/mosek_solver.h"
 #include "drake/solvers/rotation_constraint.h"
 #include "drake/common/eigen_matrix_compare.h"
 #include "drake/common/eigen_types.h"
+#include "drake/lcm/drake_lcm.h"
 
 #include "yaml-cpp/yaml.h"
 #include "common/common.hpp"
@@ -28,9 +30,12 @@
 #include <pcl/visualization/pcl_visualizer.h>
 #include <pcl/common/transforms.h>
 
+#include "remote_tree_viewer/RemoteTreeViewerWrapper.hpp"
+
 using namespace std;
 using namespace Eigen;
 using namespace drake::parsers::urdf;
+using namespace drake::systems;
 
 const double kBigNumber = 100;
 
@@ -74,18 +79,15 @@ class PointCloudGenerator {
 
       // Collect faces from all bodies in this configuration
       for (auto iter = robot_.bodies.begin(); iter != robot_.bodies.end(); iter++) {
-        auto collision_elems = (*iter)->get_collision_element_ids();
-        for (auto collision_elem = collision_elems.begin();
-                  collision_elem != collision_elems.end();
-                  collision_elem++) {
-          auto element = robot_.FindCollisionElement(*collision_elem);
+        for (const auto& collision_elem : (*iter)->get_collision_element_ids()) {
+          auto element = robot_.FindCollisionElement(collision_elem);
           if (element->hasGeometry()){
             const DrakeShapes::Geometry & geometry = element->getGeometry();
             if (geometry.hasFaces()){
               Matrix3Xd points;
               geometry.getPoints(points);
               // Transform them to this robot's frame
-              points = robot_.transformPoints(robot_kinematics_cache, points, 0, (*iter)->get_body_index());
+              points = robot_.transformPoints(robot_kinematics_cache, points, (*iter)->get_body_index(), 0);
 
               all_vertices.conservativeResize(3, points.cols() + all_vertices.cols());
               all_vertices.block(0, all_vertices.cols() - points.cols(), 3, points.cols()) = points;
@@ -94,16 +96,16 @@ class PointCloudGenerator {
               // Calculate the face surface area, so we can do even sampling from the surface.
               // See http://math.stackexchange.com/a/128999.
               // Also use this loop to offset the vertex indices to the appropriate all_vertices indices.
-              for (auto face = faces.begin(); face != faces.end(); face++) {
-                Vector3d a = points.col( (*face)[0] );
-                Vector3d b = points.col( (*face)[1] );
-                Vector3d c = points.col( (*face)[2] );
+              for (auto& face : faces){
+                Vector3d a = points.col( face[0] );
+                Vector3d b = points.col( face[1] );
+                Vector3d c = points.col( face[2] );
                 double area = ((b - a).cross(c - a)).norm() / 2.;
                 face_cumulative_area.push_back(face_cumulative_area[face_cumulative_area.size()-1] + area);
 
-                (*face)[0] += (all_vertices.cols() - points.cols());
-                (*face)[1] += (all_vertices.cols() - points.cols());
-                (*face)[2] += (all_vertices.cols() - points.cols());
+                face[0] += (all_vertices.cols() - points.cols());
+                face[1] += (all_vertices.cols() - points.cols());
+                face[2] += (all_vertices.cols() - points.cols());
               }
               all_faces.insert(all_faces.end(), faces.begin(), faces.end());
             } 
@@ -147,6 +149,10 @@ class PointCloudGenerator {
       return pc;
     }
 
+    RigidBodyTree<double> & get_robot() {
+      return robot_;
+    }
+
   private:
     int opt_scene_sampling_mode_ = 0;
     int opt_num_rays_ = 100;
@@ -161,14 +167,21 @@ class MILPMultipleMeshModelDetector {
     struct PointCorrespondence {
       Vector3d scene_pt;
       Vector3d model_pt;
+      int face_ind;
+      int scene_ind;
       std::vector<Vector3d> model_verts;
       std::vector<double> vert_weights;
+      std::vector<int> vert_inds;
     };
 
     struct ObjectDetection {
-      Eigen::Affine3f est_tf;
+      Eigen::Affine3d est_tf;
       std::vector<PointCorrespondence> correspondences;
       int obj_ind;
+    };
+
+    struct Solution {
+      std::vector<ObjectDetection> detections;
       double objective;
     };
 
@@ -209,22 +222,20 @@ class MILPMultipleMeshModelDetector {
       }
     }
 
-    std::vector<ObjectDetection> doObjectDetection(Eigen::Matrix3Xd scene_pts){
+    std::vector<Solution> doObjectDetection(Eigen::Matrix3Xd scene_pts){
       KinematicsCache<double> robot_kinematics_cache = robot_.doKinematics(q_robot_gt_);
 
       // Extract vertices and meshes from the RBT.
       Matrix3Xd all_vertices;
       DrakeShapes::TrianglesVector all_faces;
-      vector<int> face_body_map;
+      vector<int> face_body_map; // maps each face to body index
       
       // Collect faces from each body
-      int k=1;
-      for (auto iter = robot_.bodies.begin(); iter != robot_.bodies.end(); iter++) {
-        auto collision_elems = (*iter)->get_collision_element_ids();
-        for (auto collision_elem = collision_elems.begin();
-                  collision_elem != collision_elems.end();
-                  collision_elem++) {
-          auto element = robot_.FindCollisionElement(*collision_elem);
+      for (int body_i = 1; body_i < robot_.get_num_bodies(); body_i++) {
+        const RigidBody<double>& body = robot_.get_body(body_i);
+        auto collision_elems = body.get_collision_element_ids();
+        for (const auto& collision_elem : body.get_collision_element_ids()) {
+          auto element = robot_.FindCollisionElement(collision_elem);
           if (element->hasGeometry()){
             const DrakeShapes::Geometry & geometry = element->getGeometry();
             if (geometry.hasFaces()){
@@ -236,23 +247,23 @@ class MILPMultipleMeshModelDetector {
               DrakeShapes::TrianglesVector faces;
               geometry.getFaces(faces);
               // Also use this loop to offset the vertex indices to the appropriate all_vertices indices.
-              for (auto face : faces) {
+              for (auto& face : faces) {
                 face[0] += (all_vertices.cols() - points.cols());
                 face[1] += (all_vertices.cols() - points.cols());
                 face[2] += (all_vertices.cols() - points.cols());
-                face_body_map.push_back( k );
+                face_body_map.push_back( body_i );
               }
               all_faces.insert(all_faces.end(), faces.begin(), faces.end());
-              k++;
             } 
           }
         }
       }
-      
+
       // And reform those extracted verticies and meshes into
       // matrices for our optimization
       MatrixXd F(all_faces.size(), all_vertices.cols());
-      MatrixXd B(robot_.bodies.size(), all_faces.size());
+      // Don't include the "world" body
+      MatrixXd B(robot_.get_num_bodies() - 1, all_faces.size());
       B.setZero();
       F.setZero();
       for (int i=0; i<all_faces.size(); i++){
@@ -260,7 +271,8 @@ class MILPMultipleMeshModelDetector {
         F(i, all_faces[i][0]) = 1.;
         F(i, all_faces[i][1]) = 1.;
         F(i, all_faces[i][2]) = 1.;
-        B(face_body_map[i], i) = 1.0;
+        // Don't include the "world" body.
+        B(face_body_map[i]-1, i) = 1.0;
       }
 
       // See https://www.sharelatex.com/project/5850590c38884b7c6f6aedd1
@@ -284,10 +296,10 @@ class MILPMultipleMeshModelDetector {
         MatrixXDecisionVariable R;
       };
       std::vector<TransformationVars> transform_by_object;
-      for (int i=0; i<robot_.bodies.size(); i++){
+      for (int body_i=1; body_i<robot_.get_num_bodies(); body_i++){
         TransformationVars new_tr;
         char name_postfix[100];
-        sprintf(name_postfix, "_%s_%d", robot_.bodies[i]->get_model_name().c_str(), i);
+        sprintf(name_postfix, "_%s_%d", robot_.get_body(body_i).get_model_name().c_str(), body_i);
         new_tr.T = prog.NewContinuousVariables(3, string("T")+string(name_postfix));
         prog.AddBoundingBoxConstraint(-100*VectorXd::Ones(3), 100*VectorXd::Ones(3), new_tr.T);
         new_tr.R = NewRotationMatrixVars(&prog, string("R") + string(name_postfix));
@@ -320,7 +332,7 @@ class MILPMultipleMeshModelDetector {
         } else {
           // constrain rotations to ground truth
           // I know I can do this in one constraint with 9 rows, but eigen was giving me trouble
-          auto ground_truth_tf = robot_.relativeTransform(robot_kinematics_cache, 0, robot_.bodies[i]->get_body_index());
+          auto ground_truth_tf = robot_.relativeTransform(robot_kinematics_cache, robot_.get_body(body_i).get_body_index(), 0);
           for (int i=0; i<3; i++){
             for (int j=0; j<3; j++){
               prog.AddLinearEqualityConstraint(Eigen::MatrixXd::Identity(1, 1), ground_truth_tf.rotation()(i, j), new_tr.R.block<1,1>(i, j));
@@ -405,12 +417,12 @@ class MILPMultipleMeshModelDetector {
       AlphaConstrNeg.block<1, 1>(0, 4) = MatrixXd::Ones(1, 1); // T bias term
 
       printf("Starting to add correspondence costs... ");
-      for (int l=0; l<robot_.bodies.size(); l++){
-        AlphaConstrPos.block(0, 5+all_vertices.cols(), 1, B.cols()) = -kBigNumber*B.row(l); // multiplies f_i
-        AlphaConstrNeg.block(0, 5+all_vertices.cols(), 1, B.cols()) = -kBigNumber*B.row(l); // multiplies f_i
+      for (int body_i=1; body_i<robot_.get_num_bodies(); body_i++){
+        AlphaConstrPos.block(0, 5+all_vertices.cols(), 1, B.cols()) = -kBigNumber*B.row(body_i-1); // multiplies f_i
+        AlphaConstrNeg.block(0, 5+all_vertices.cols(), 1, B.cols()) = -kBigNumber*B.row(body_i-1); // multiplies f_i
 
         for (int i=0; i<scene_pts.cols(); i++){
-          printf("\r\tgenerating guess for body (%d)/(%d), point (%d)/(%d)", l, (int)robot_.bodies.size(), i, (int)scene_pts.cols());
+          printf("\r\tgenerating guess for body (%d)/(%d), point (%d)/(%d)", body_i, (int)robot_.get_num_bodies(), i, (int)scene_pts.cols());
 
           // constrain L-1 distance slack based on correspondences
           // phi_i >= 1^T alpha_{i}
@@ -444,46 +456,46 @@ class MILPMultipleMeshModelDetector {
           AlphaConstrPos.block(0, 5, 1, all_vertices.cols()) = 1.0 * all_vertices.row(0); // multiplies the selection vars
           prog.AddLinearConstraint(AlphaConstrPos, -kBigNumber, std::numeric_limits<double>::infinity(),
             {alpha.block<1,1>(0, i),
-             transform_by_object[l].R.block<1, 3>(0, 0).transpose(), 
-             transform_by_object[l].T.block<1,1>(0,0),
+             transform_by_object[body_i-1].R.block<1, 3>(0, 0).transpose(), 
+             transform_by_object[body_i-1].T.block<1,1>(0,0),
              C.row(i).transpose(),
              f.row(i).transpose()});
 
           AlphaConstrPos.block(0, 5, 1, all_vertices.cols()) = 1.0 * all_vertices.row(1); // multiplies the selection vars
           prog.AddLinearConstraint(AlphaConstrPos, -kBigNumber, std::numeric_limits<double>::infinity(),
             {alpha.block<1,1>(1, i),
-             transform_by_object[l].R.block<1, 3>(1, 0).transpose(), 
-             transform_by_object[l].T.block<1,1>(1,0),
+             transform_by_object[body_i-1].R.block<1, 3>(1, 0).transpose(), 
+             transform_by_object[body_i-1].T.block<1,1>(1,0),
              C.row(i).transpose(),
              f.row(i).transpose()});
 
           AlphaConstrPos.block(0, 5, 1, all_vertices.cols()) = 1.0 * all_vertices.row(2); // multiplies the selection vars
           prog.AddLinearConstraint(AlphaConstrPos, -kBigNumber, std::numeric_limits<double>::infinity(),
             {alpha.block<1,1>(2, i),
-             transform_by_object[l].R.block<1, 3>(2, 0).transpose(), 
-             transform_by_object[l].T.block<1,1>(2,0),
+             transform_by_object[body_i-1].R.block<1, 3>(2, 0).transpose(), 
+             transform_by_object[body_i-1].T.block<1,1>(2,0),
              C.row(i).transpose(),
              f.row(i).transpose()});
 
           AlphaConstrNeg.block(0, 5, 1, all_vertices.cols()) = -1.0 * all_vertices.row(0); // multiplies the selection vars
           prog.AddLinearConstraint(AlphaConstrNeg, -kBigNumber, std::numeric_limits<double>::infinity(),
             {alpha.block<1,1>(0, i),
-             transform_by_object[l].R.block<1, 3>(0, 0).transpose(), 
-             transform_by_object[l].T.block<1,1>(0,0),
+             transform_by_object[body_i-1].R.block<1, 3>(0, 0).transpose(), 
+             transform_by_object[body_i-1].T.block<1,1>(0,0),
              C.row(i).transpose(),
              f.row(i).transpose()});
           AlphaConstrNeg.block(0, 5, 1, all_vertices.cols()) = -1.0 * all_vertices.row(1); // multiplies the selection vars
           prog.AddLinearConstraint(AlphaConstrNeg, -kBigNumber, std::numeric_limits<double>::infinity(),
             {alpha.block<1,1>(1, i),
-             transform_by_object[l].R.block<1, 3>(1, 0).transpose(), 
-             transform_by_object[l].T.block<1,1>(1,0),
+             transform_by_object[body_i-1].R.block<1, 3>(1, 0).transpose(), 
+             transform_by_object[body_i-1].T.block<1,1>(1,0),
              C.row(i).transpose(),
              f.row(i).transpose()});
           AlphaConstrNeg.block(0, 5, 1, all_vertices.cols()) = -1.0 * all_vertices.row(2); // multiplies the selection vars
           prog.AddLinearConstraint(AlphaConstrNeg, -kBigNumber, std::numeric_limits<double>::infinity(),
             {alpha.block<1,1>(2, i),
-             transform_by_object[l].R.block<1, 3>(2, 0).transpose(), 
-             transform_by_object[l].T.block<1,1>(2,0),
+             transform_by_object[body_i-1].R.block<1, 3>(2, 0).transpose(), 
+             transform_by_object[body_i-1].T.block<1,1>(2,0),
              C.row(i).transpose(),
              f.row(i).transpose()});
         }
@@ -524,11 +536,12 @@ class MILPMultipleMeshModelDetector {
         }
         VectorXd q_robot_corrupt = q_robot_gt_ + corruption_vec;
         KinematicsCache<double> robot_kinematics_cache_corrupt = robot_.doKinematics(q_robot_corrupt);
+        cout << "q robot corrupt " << q_robot_corrupt.transpose() << endl;
 
-        for (int i=0; i<robot_.bodies.size(); i++){
-          auto tf = robot_.relativeTransform(robot_kinematics_cache_corrupt, 0, robot_.bodies[i]->get_body_index());
-          prog.SetInitialGuess(transform_by_object[i].T, tf.translation());
-          prog.SetInitialGuess(transform_by_object[i].R, tf.matrix().block<3, 3>(0, 0));
+        for (int body_i=1; body_i<robot_.get_num_bodies(); body_i++){
+          auto tf = robot_.relativeTransform(robot_kinematics_cache_corrupt, body_i, 0);
+          //prog.SetInitialGuess(transform_by_object[body_i-1].T, tf.translation());
+          //prog.SetInitialGuess(transform_by_object[body_i-1].R, tf.matrix().block<3, 3>(0, 0));
         }
 
         // for every scene point, project it down onto the models at the supplied TF to get closest object, and use 
@@ -545,13 +558,16 @@ class MILPMultipleMeshModelDetector {
         f0.setZero();
         printf("Starting to backsolve initial guess...\n");
         for (int i=0; i<scene_pts.cols(); i++){
-          printf("\r\tgenerating guess for point (%d)/(%d)", i, (int)scene_pts.cols());
+          printf("\tgenerating guess for point (%d)/(%d)", i, (int)scene_pts.cols());
           // Find the face it's closest to on body i
           double dist = std::numeric_limits<double>::infinity();
           int face_ind = 0;
           Vector3d closest_pt;
+          cout << "\t point:" << scene_pts.col(i).transpose() << endl;
+          cout << "\t closest pt:" << search_x.col(i).transpose() << endl;
+          printf("\t search body ind %d\n", search_body_idx[i]);
           for (int j=0; j<all_faces.size(); j++){
-            if (B(search_body_idx[i], j) > 0.5){
+            if (search_body_idx[i] > 0 && B(search_body_idx[i]-1, j) > 0.5){
               // We're looking for argmin_{pt_proj} ||pt - pt_proj||
               //   such that pt_proj = verts * C
               MathematicalProgram prog_proj;
@@ -562,7 +578,7 @@ class MILPMultipleMeshModelDetector {
               for (int k=0; k<3; k++){
                 verts.col(k) = all_vertices.col(all_faces[j][k]);
               }
-              verts = robot_.transformPoints(robot_kinematics_cache_corrupt, verts, 0, search_body_idx[i]);
+              verts = robot_.transformPoints(robot_kinematics_cache_corrupt, verts, search_body_idx[i], 0);
               auto C = prog_proj.NewContinuousVariables(3, 1, "C");
               prog_proj.AddBoundingBoxConstraint(0.0, 1.0, C);
               prog_proj.AddLinearEqualityConstraint(VectorXd::Ones(3).transpose(), 1.0, C);
@@ -589,7 +605,7 @@ class MILPMultipleMeshModelDetector {
               }
             }
           }
-
+          cout << "\t found closest pt " << closest_pt.transpose() << endl;
           if (dist < 0.1){
             f0(i, face_ind) = 1;
           }
@@ -608,12 +624,82 @@ class MILPMultipleMeshModelDetector {
       string problem_string = "rigidtf";
       double elapsed = getUnixTime() - now;
 
-      //prog.PrintSolution();
+      prog.PrintSolution();
       printf("Code %d, problem %s solved for %lu scene solved in: %f\n", out, problem_string.c_str(), scene_pts.cols(), elapsed);
 
+      std::vector<Solution> solutions;
 
-      std::vector<ObjectDetection> detections(prog.get_num_solutions());
-      return detections;
+      for (int sol_i = 0; sol_i < prog.get_num_solutions(); sol_i++) {
+        printf("==================================================\n");
+        printf("======================SOL %d ======================\n", sol_i);
+        printf("==================================================\n");
+        auto f_est= prog.GetSolution(f, sol_i);
+        auto C_est = prog.GetSolution(C, sol_i);
+
+        Solution new_solution;
+
+        for (int body_i = 1; body_i < robot_.get_num_bodies(); body_i++){
+          const RigidBody<double>& body = robot_.get_body(body_i);
+
+          ObjectDetection new_detection;
+          new_detection.obj_ind = body_i;
+      
+          printf("************************************************\n");
+          printf("Concerning model %d (%s):\n", body_i, body.get_name().c_str());
+          printf("------------------------------------------------\n");
+          Vector3d Tf = prog.GetSolution(transform_by_object[body_i-1].T, sol_i);
+          Matrix3d Rf = prog.GetSolution(transform_by_object[body_i-1].R, sol_i);
+          printf("Transform:\n");
+          printf("\tTranslation: %f, %f, %f\n", Tf(0, 0), Tf(1, 0), Tf(2, 0));
+          printf("\tRotation:\n");
+          printf("\t\t%f, %f, %f\n", Rf(0, 0), Rf(0, 1), Rf(0, 2));
+          printf("\t\t%f, %f, %f\n", Rf(1, 0), Rf(1, 1), Rf(1, 2));
+          printf("\t\t%f, %f, %f\n", Rf(2, 0), Rf(2, 1), Rf(2, 2));
+          printf("------------------------------------------------\n");
+          printf("************************************************\n");
+          new_detection.est_tf.setIdentity();
+          new_detection.est_tf.translation() = Tf;
+          new_detection.est_tf.matrix().block<3,3>(0,0) = Rf;
+          // And flip it, so that it transforms from world -> model
+          new_detection.est_tf = new_detection.est_tf.inverse();
+
+          for (int scene_i=0; scene_i<scene_pts.cols(); scene_i++){
+            for (int face_i=0; face_i<f_est.cols(); face_i++){
+              // if this face is assigned, and this face is a member of this object,
+              // then display this point
+              if (f_est(scene_i, face_i) > 0.5 && B(body_i-1, face_i) > 0.5){
+                PointCorrespondence new_corresp;
+                new_corresp.scene_pt = scene_pts.col(scene_i);
+                new_corresp.model_pt = new_detection.est_tf * scene_pts.col(scene_i);
+                new_corresp.scene_ind = scene_i;
+                new_corresp.face_ind = face_i;
+                for (int k_v=0; k_v<all_vertices.cols(); k_v++){
+                  if (C_est(scene_i, k_v) >= 0.0){
+                    new_corresp.model_verts.push_back( all_vertices.col(k_v) );
+                    new_corresp.vert_weights.push_back( C_est(scene_i, k_v) );
+                    new_corresp.vert_inds.push_back(k_v);
+                  }
+                }
+                new_detection.correspondences.push_back(new_corresp);
+              }
+            }
+          }
+
+          // Include this as a detection if we have correspondences
+          // to support it.
+          if (new_detection.correspondences.size() > 0)
+            new_solution.detections.push_back(new_detection);
+        }
+
+        new_solution.objective = prog.GetSolution(phi, sol_i).sum();
+        solutions.push_back(new_solution);
+      }
+
+      return solutions;
+    }
+
+    RigidBodyTree<double> & get_robot() {
+      return robot_;
     }
 
   private:
@@ -667,22 +753,66 @@ int main(int argc, char** argv) {
     scene_pts.col(i) = pointToVector3d(scene_pts_pcl->at(i));
   }
 
+  // Visualize the results using the drake visualizer.
+  RemoteTreeViewerWrapper rm;
+  // Publish the scene cloud
+  rm.publishPointCloud(scene_pts, {"scene_pts"});
+
   // And set up our detector
   if (config["detector_options"] == NULL){
     runtime_error("Config needs a detector option set.");
   }
   MILPMultipleMeshModelDetector detector(config["detector_options"]);
-  auto detections = detector.doObjectDetection(scene_pts);
+  auto solutions = detector.doObjectDetection(scene_pts);
 
-  // Visualize the generated model point cloud
-  pcl::visualization::PCLVisualizer viewer ("Point Collection");
+  for (const auto& solution : solutions){
+    printf("printing sol\n");
+    stringstream sol_name;
+    sol_name << "sol_obj_" << solution.objective;
 
-  pcl::visualization::PointCloudColorHandlerCustom<PointType> model_color_handler (scene_pts_pcl, 128, 255, 255);
-  viewer.addPointCloud<PointType>(scene_pts_pcl, model_color_handler, "model pts"); 
-  viewer.setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "model pts");
+    for (const auto& detection : solution.detections){
+      const RigidBody<double>& body = detector.get_robot().get_body(detection.obj_ind);
+      printf("det\n");
 
-  while (!viewer.wasStopped ())
-    viewer.spinOnce ();
+      for (const auto& collision_elem_id : body.get_collision_element_ids()) {
+        stringstream collision_elem_id_str;
+        collision_elem_id_str << collision_elem_id;
+        auto element = detector.get_robot().FindCollisionElement(collision_elem_id);
+        printf("coll\n");
+        if (element->hasGeometry()){
+          printf("geom\n");
+          vector<string> path;
+          path.push_back(sol_name.str());
+          path.push_back(body.get_name());
+          path.push_back(collision_elem_id_str.str());
+          cout << "TF: " << detection.est_tf.translation().transpose() << endl;
+          rm.publishGeometry(element->getGeometry(), detection.est_tf, path);
+        }
+      }
+    }
+  }
+/*
+      struct PointCorrespondence {
+      Vector3d scene_pt;
+      Vector3d model_pt;
+      int face_ind;
+      int scene_ind;
+      std::vector<Vector3d> model_verts;
+      std::vector<double> vert_weights;
+      std::vector<int> vert_inds;
+    };
+
+    struct ObjectDetection {
+      Eigen::Affine3d est_tf;
+      std::vector<PointCorrespondence> correspondences;
+      int obj_ind;
+    };
+
+    struct Solution {
+      std::vector<ObjectDetection> detections;
+      double objective;
+    };
+*/
 
   return 0;
 }

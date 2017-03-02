@@ -390,10 +390,10 @@ int main(int argc, char** argv) {
     MatrixXDecisionVariable R;
   };
   std::vector<TransformationVars> transform_by_object;
-  for (int i=0; i<models.size(); i++){
+  for (int body_i=0; body_i<models.size(); body_i++){
     TransformationVars new_tr;
     char name_postfix[100];
-    sprintf(name_postfix, "_%s_%d", models[i].name.c_str(), i);
+    sprintf(name_postfix, "_%s_%d", models[body_i].name.c_str(), body_i);
     new_tr.T = prog.NewContinuousVariables(3, string("T")+string(name_postfix));
     prog.AddBoundingBoxConstraint(-100*VectorXd::Ones(3), 100*VectorXd::Ones(3), new_tr.T);
     new_tr.R = NewRotationMatrixVars(&prog, string("R") + string(name_postfix));
@@ -426,7 +426,7 @@ int main(int argc, char** argv) {
     } else {
       // constrain rotations to ground truth
       // I know I can do this in one constraint with 9 rows, but eigen was giving me trouble
-      auto ground_truth_tf = models[i].scene_transform.inverse().cast<float>() * models[i].model_transform.cast<float>();
+      auto ground_truth_tf = models[body_i].scene_transform.inverse().cast<float>() * models[body_i].model_transform.cast<float>();
       for (int i=0; i<3; i++){
         for (int j=0; j<3; j++){
           prog.AddLinearEqualityConstraint(Eigen::MatrixXd::Identity(1, 1), ground_truth_tf.rotation()(i, j), new_tr.R.block<1,1>(i, j));
@@ -793,7 +793,7 @@ int main(int argc, char** argv) {
       }
       reextract_solution = false;
 
-      objective = prog.GetSolution(phi).sum() + prog.GetSolution(alpha).sum();
+      objective = prog.GetSolution(phi, target_sol).sum() + prog.GetSolution(alpha, target_sol).sum();
     }
 
     if (pending_redraw){

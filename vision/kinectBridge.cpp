@@ -9,7 +9,7 @@
 //  $ gcc -o listener listener.cpp `pkg-config --cflags --libs lcm`
 
 #include <stdio.h>
-
+#include <ctime>
 #include <lcm/lcm-cpp.hpp>
 #include "kinect/depth_msg_t.hpp"
 #include "PointCloudFactory.hpp"
@@ -17,6 +17,9 @@
 #include <pcl/io/io.h>
 #include <pcl/io/pcd_io.h>
 #include "kinect/pointcloud_t.hpp"
+#include <string>
+#include <iostream>
+#include <fstream> 
 
 typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 static pcl::visualization::CloudViewer viewer("Cloud Viewer");
@@ -27,13 +30,14 @@ static pcl::visualization::CloudViewer viewer("Cloud Viewer");
  		PointCloud::Ptr currentPointCloud;
  		//will need more than one viewer in the future
  		lcm::LCM messager;
+		bool received_frame;
 
         public:
         	//maybe init with some shared params
              ~PointCloudHandler() {
 				viewer.runOnVisualizationThreadOnce (viewInit);
-				viewer.runOnVisualizationThread(viewCloud);
-
+				viewer.runOnVisualizationThread(viewCloud); 
+				received_frame = false;
 			}
 
      		///////////////////////////////////////////////////////////////
@@ -46,16 +50,22 @@ static pcl::visualization::CloudViewer viewer("Cloud Viewer");
                 const kinect::depth_msg_t* depthImage) {
 
                 printf("Received depth message on channel \"%s\":\n", chan.c_str());
-				PointCloud::Ptr pointCloud = PointCloudFactory::depthImageToPointCloud(depthImage);
-				std::cerr << "PointCloud size: " << pointCloud->width * pointCloud->height <<  ").\n";
-				//pointCloud = PointCloudFactory::statOutlierRemoval(pointCloud, 100, 1.0);
-				pointCloud = PointCloudFactory::voxelDownSample(pointCloud,.01, .01, .01);
+                if(!received_frame){
+                	received_frame = true;
+					// PointCloud::Ptr pointCloud = PointCloudFactory::depthImageToPointCloud(depthImage);
+					// std::cerr << "PointCloud size: " << pointCloud->width * pointCloud->height <<  ").\n";
 
-				viewer.showCloud(pointCloud);
+					// //pointCloud = PointCloudFactory::zPassThroughFilter(pointCloud, 0.2, 0.4);
+					// //pointCloud = PointCloudFactory::statOutlierRemoval(pointCloud, 50, 1.0);
+					// //pointCloud = PointCloudFactory::voxelDownSample(pointCloud,.01, .01, .01);
+					// std::cerr << "PointCloud after: " << pointCloud->width * pointCloud->height <<  ").\n";
 
-				std::cerr << "PointCloud after: " << pointCloud->width * pointCloud->height <<  ").\n";
-
- 			    publishPointCloud(pointCloud);
+					// viewer.showCloud(pointCloud);
+ 			 //    	publishPointCloud(pointCloud);
+ 			 //    	savePointCloud("Kinect_1Box_OpenFloor", pointCloud);
+                	readModelPCDFile("../RGB-D_TestSet/Kinect_1Box_OpenFloor.pcd");
+                	viewer.showCloud(currentPointCloud);
+ 				}
  			}
 
 			int readModelPCDFile(string pathToFile){
@@ -68,17 +78,20 @@ static pcl::visualization::CloudViewer viewer("Cloud Viewer");
             	<< cloud->width * cloud->height << " points "<< std::endl;
             	currentPointCloud = cloud;
 			}
-
- 			int savePointCloud(string name) {
+ 
+ 			int savePointCloud(string name, PointCloud::Ptr cloud) {
      			string extension = ".pcd";
-     			string fileName = name + extension;
-     			string directory = "pclObjectLibrary";
-     			if(pcl::io::savePCDFileASCII (directory + "name" + ".pcd",  *currentPointCloud)){
-        			std::cerr << "Saved " << currentPointCloud->points.size () << " data points to " << std::endl;
+     			string directory = "../RGB-D_TestSet/";
+     			string path =  directory + name + ".pcd";
+     			std::cerr <<  path << std::endl;
+
+
+     			if(pcl::io::savePCDFileASCII (path,  *cloud)){
+        			std::cerr << "Saved " << cloud->points.size () << " data points to " << path << std::endl;
         			return 0;
       			}
     			else {
-         			std::cerr << "Could not write to pcd file"<< std::endl;
+         			std::cerr << "Could not write to pcd file to "<< path << std::endl;
          			return 1;
       			}
       		}
@@ -116,6 +129,20 @@ static pcl::visualization::CloudViewer viewer("Cloud Viewer");
     			std::stringstream ss;
 				viewer.addText (ss.str(), 200, 300, "text", 0);
     		}
+
+  			///////////////////////////////////////////////////////
+  			//util
+  			/////////////////////////////////////////////////////
+  			static string getCurrentTimeStamp (){
+  				time_t now = time(0);
+  				char* dt = ctime(&now);
+  				std::string date(dt);
+  				date.erase(std::remove(date.begin(),date.end(),' '),date.end()-2);
+
+  				return date;
+
+  			}
+
   	};
 
 

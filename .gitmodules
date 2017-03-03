@@ -10,3 +10,6 @@
 [submodule "libfreenect2"]
 	path = libfreenect2
 	url = https://github.com/ChristopherSweeney/libfreenect2.git
+[submodule "kinect"]
+	path = kinect
+	url = https://github.com/openhumanoids/kinect.git

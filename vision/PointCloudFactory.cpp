@@ -28,6 +28,8 @@ PointCloud::Ptr PointCloudFactory::depthImageToPointCloud(const kinect::depth_ms
     std::cout << frameSize << std::endl;
     cloud->height = depthImage->height;
     cloud->width = depthImage->width;
+    cloud->is_dense = false;
+
     //set ground coordinates
     cloud->sensor_origin_.setZero (); 
     cloud->sensor_orientation_.w () = 0.0f; 

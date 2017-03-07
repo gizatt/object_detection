@@ -31,10 +31,16 @@ static pcl::visualization::CloudViewer viewer("Cloud Viewer");
  		//will need more than one viewer in the future
  		lcm::LCM messager;
 		bool received_frame;
+		string pcdFile;
 
         public:
         	//maybe init with some shared params
-             ~PointCloudHandler() {
+             PointCloudHandler(string pcdFileName) {
+				PointCloudHandler();
+				this->pcdFile = pcdFileName;
+			}
+
+			  PointCloudHandler() {
 				viewer.runOnVisualizationThreadOnce (viewInit);
 				viewer.runOnVisualizationThread(viewCloud); 
 				received_frame = false;
@@ -49,24 +55,42 @@ static pcl::visualization::CloudViewer viewer("Cloud Viewer");
                 const std::string& chan, 
                 const kinect::depth_msg_t* depthImage) {
 
-                printf("Received depth message on channel \"%s\":\n", chan.c_str());
+                //printf("Received depth message on channel \"%s\":\n", chan.c_str());
                 if(!received_frame){
                 	received_frame = true;
-					// PointCloud::Ptr pointCloud = PointCloudFactory::depthImageToPointCloud(depthImage);
+					PointCloud::Ptr pointCloud = PointCloudFactory::depthImageToPointCloud(depthImage);
 					// std::cerr << "PointCloud size: " << pointCloud->width * pointCloud->height <<  ").\n";
 
 					// //pointCloud = PointCloudFactory::zPassThroughFilter(pointCloud, 0.2, 0.4);
 					// //pointCloud = PointCloudFactory::statOutlierRemoval(pointCloud, 50, 1.0);
 					// //pointCloud = PointCloudFactory::voxelDownSample(pointCloud,.01, .01, .01);
 					// std::cerr << "PointCloud after: " << pointCloud->width * pointCloud->height <<  ").\n";
-
 					// viewer.showCloud(pointCloud);
- 			 //    	publishPointCloud(pointCloud);
- 			 //    	savePointCloud("Kinect_1Box_OpenFloor", pointCloud);
-                	readModelPCDFile("../RGB-D_TestSet/Kinect_1Box_OpenFloor.pcd");
-                	viewer.showCloud(currentPointCloud);
+ 			     	// publishPointCloud(pointCloud);
+ 			     	savePointCloud(pointCloud);
+                	//readModelPCDFile("../RGB-D_TestSet/Kinect_1Box_OpenFloor.pcd");
+                	viewer.showCloud(pointCloud);
  				}
  			}
+
+ 			void ingestDepthImages(const lcm::ReceiveBuffer* rbuf,
+                const std::string& chan, 
+                const kinect::depth_msg_t* depthImage) {
+
+                printf("Received depth message on channel \"%s\":\n", chan.c_str());
+               
+				PointCloud::Ptr pointCloud = PointCloudFactory::depthImageToPointCloud(depthImage);
+				// std::cerr << "PointCloud size: " << pointCloud->width * pointCloud->height <<  ").\n";
+
+				// //pointCloud = PointCloudFactory::zPassThroughFilter(pointCloud, 0.2, 0.4);
+				// //pointCloud = PointCloudFactory::statOutlierRemoval(pointCloud, 50, 1.0);
+				// //pointCloud = PointCloudFactory::voxelDownSample(pointCloud,.01, .01, .01);
+				// std::cerr << "PointCloud after: " << pointCloud->width * pointCloud->height <<  ").\n";
+
+ 			     publishPointCloud(pointCloud);
+                 viewer.showCloud(pointCloud);
+ 			}
+
 
 			int readModelPCDFile(string pathToFile){
 				pcl::PointCloud<pcl::PointXYZ>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZ>);
@@ -79,10 +103,10 @@ static pcl::visualization::CloudViewer viewer("Cloud Viewer");
             	currentPointCloud = cloud;
 			}
  
- 			int savePointCloud(string name, PointCloud::Ptr cloud) {
+ 			int savePointCloud(PointCloud::Ptr cloud) {
      			string extension = ".pcd";
      			string directory = "../RGB-D_TestSet/";
-     			string path =  directory + name + ".pcd";
+     			string path = directory +  pcdFile + ".pcd";
      			std::cerr <<  path << std::endl;
 
 
@@ -115,7 +139,7 @@ static pcl::visualization::CloudViewer viewer("Cloud Viewer");
   				}
 
    				messager.publish("KINECT_POINT_CLOUD_RAW", &point_cloud);
-   				std::cout << "publishing KINECT_POINT_CLOUD_RAW" << std::endl;
+   				//std::cout << "publishing KINECT_POINT_CLOUD_RAW" << std::endl;
   			}
 
   			///////////////////////////////////////////////////////
@@ -127,7 +151,7 @@ static pcl::visualization::CloudViewer viewer("Cloud Viewer");
     		}
     		static void viewCloud (pcl::visualization::PCLVisualizer& viewer) {
     			std::stringstream ss;
-				viewer.addText (ss.str(), 200, 300, "text", 0);
+				//viewer.addText (ss.str(), 200, 300, "text", 0);
     		}
 
   			///////////////////////////////////////////////////////
@@ -149,15 +173,24 @@ static pcl::visualization::CloudViewer viewer("Cloud Viewer");
 
 int main(int argc, char *argv[])
 {
-	std::cout << "Starting to listen for depth images" << std::endl;
+
     lcm::LCM lcm;
 
     if(!lcm.good())
         return 1;
 
-    //pass kinect point clouds into handler object
     PointCloudHandler kinectCloudHandler;
+     std::cout << argv[1] << std::endl;
+
+    if (argc > 1)
+    {
+    	std::string arg1(argv[1]);
+    	kinectCloudHandler = PointCloudHandler(arg1);
+    }
+
     lcm.subscribe("DEPTH_IMAGE", &PointCloudHandler::ingestDepthImage, &kinectCloudHandler);
+   	std::cout << "Starting to listen for depth images" << std::endl;
+
     while(0 == lcm.handle());
 
     //pass pcl static point cloud into handler object

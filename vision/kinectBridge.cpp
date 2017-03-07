@@ -45,7 +45,16 @@ static pcl::visualization::CloudViewer viewer("Cloud Viewer");
 				viewer.runOnVisualizationThread(viewCloud); 
 				received_frame = false;
 			}
+			///////////////////////////////////////////////////////////////
+			//getters setters
+			/////////////////////////////////////////////////////////////
 
+			void setCurrentPointCloud(PointCloud::Ptr cloud){
+				currentPointCloud = cloud;
+			}
+			const PointCloud::Ptr getCurrentPointCloud(){
+				return currentPointCloud;
+			}
      		///////////////////////////////////////////////////////////////
              //I/O
              /////////////////////////////////////////////////////////////

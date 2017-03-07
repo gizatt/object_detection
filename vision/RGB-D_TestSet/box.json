@@ -1,0 +1,27 @@
+{
+	"hardware": "kinect",
+	"scene": {
+		"descritiption": "one box in space",
+		"lcm log": "lcm_logs/lcmlog-2017-03-06.00",
+		"point cloud": "kinect_2Box_metallicSurface_raw1.pcd",
+		"models": [
+			{
+				"name": "box1",
+				"urdf file": "urdf/cube.urdf",
+				"position": {
+					"x":1,
+					"y":1,
+					"z":1,
+					"w":1
+				},
+				"orientati on": {
+					"x":1,
+					"y":1,
+					"z":1,
+					"w":1
+				}
+
+			}
+		]
+	}
+}

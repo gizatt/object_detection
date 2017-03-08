@@ -1,0 +1,13 @@
+# Target labels
+ libfreenect2
+# Source files and their labels
+/home/drc/object_detection/vision/CMakeFiles/libfreenect2
+/home/drc/object_detection/vision/CMakeFiles/libfreenect2.rule
+/home/drc/object_detection/vision/CMakeFiles/libfreenect2-complete.rule
+/home/drc/object_detection/vision/libfreenect2-prefix/src/libfreenect2-stamp/libfreenect2-install.rule
+/home/drc/object_detection/vision/libfreenect2-prefix/src/libfreenect2-stamp/libfreenect2-mkdir.rule
+/home/drc/object_detection/vision/libfreenect2-prefix/src/libfreenect2-stamp/libfreenect2-download.rule
+/home/drc/object_detection/vision/libfreenect2-prefix/src/libfreenect2-stamp/libfreenect2-update.rule
+/home/drc/object_detection/vision/libfreenect2-prefix/src/libfreenect2-stamp/libfreenect2-patch.rule
+/home/drc/object_detection/vision/libfreenect2-prefix/src/libfreenect2-stamp/libfreenect2-configure.rule
+/home/drc/object_detection/vision/libfreenect2-prefix/src/libfreenect2-stamp/libfreenect2-build.rule

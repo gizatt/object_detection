@@ -1,0 +1,51 @@
+
+{
+	"sources" : 
+	[
+		
+		{
+			"file" : "/home/drc/object_detection/vision/CMakeFiles/drc_core_utils"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/CMakeFiles/drc_core_utils.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/CMakeFiles/drc_core_utils-complete.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/src/drc_core_utils-stamp/drc_core_utils-install.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/src/drc_core_utils-stamp/drc_core_utils-mkdir.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/src/drc_core_utils-stamp/drc_core_utils-download.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/src/drc_core_utils-stamp/drc_core_utils-update.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/src/drc_core_utils-stamp/drc_core_utils-patch.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/src/drc_core_utils-stamp/drc_core_utils-configure.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/src/drc_core_utils-stamp/drc_core_utils-build.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : [ "drc_core_utils" ],
+		"name" : "drc_core_utils"
+	}
+}

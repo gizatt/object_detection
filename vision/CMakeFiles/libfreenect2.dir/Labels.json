@@ -1,0 +1,51 @@
+
+{
+	"sources" : 
+	[
+		
+		{
+			"file" : "/home/drc/object_detection/vision/CMakeFiles/libfreenect2"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/CMakeFiles/libfreenect2.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/CMakeFiles/libfreenect2-complete.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/libfreenect2-prefix/src/libfreenect2-stamp/libfreenect2-install.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/libfreenect2-prefix/src/libfreenect2-stamp/libfreenect2-mkdir.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/libfreenect2-prefix/src/libfreenect2-stamp/libfreenect2-download.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/libfreenect2-prefix/src/libfreenect2-stamp/libfreenect2-update.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/libfreenect2-prefix/src/libfreenect2-stamp/libfreenect2-patch.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/libfreenect2-prefix/src/libfreenect2-stamp/libfreenect2-configure.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/libfreenect2-prefix/src/libfreenect2-stamp/libfreenect2-build.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : [ "libfreenect2" ],
+		"name" : "libfreenect2"
+	}
+}

@@ -15,12 +15,26 @@ include_directories(${PCL_INCLUDE_DIRS})
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
 
-file(GLOB kinectPointCloud
+file(GLOB capturePointCloudFrame
     "*.h"
+    "*.hpp"
     "*.cpp"
 )
 
-add_executable(kinectPointCloud ${kinectPointCloud})
-target_link_libraries(kinectPointCloud ${PCL_LIBRARIES} lcm)
+file(GLOB processDepthStream
+    "*.h"
+    "*.hpp"
+    "*.cpp"
+)
+
+list(REMOVE_ITEM capturePointCloudFrame ${CMAKE_CURRENT_SOURCE_DIR}/processDepthStream.cpp)
+
+list(REMOVE_ITEM processDepthStream ${CMAKE_CURRENT_SOURCE_DIR}/capturePointCloudFrame.cpp)
 
 
+add_executable(capturePointCloudFrame ${capturePointCloudFrame})
+target_link_libraries(capturePointCloudFrame ${PCL_LIBRARIES} lcm)
+
+
+add_executable(processDepthStream ${processDepthStream})
+target_link_libraries(processDepthStream ${PCL_LIBRARIES} lcm)

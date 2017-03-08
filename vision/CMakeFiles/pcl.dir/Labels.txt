@@ -1,0 +1,13 @@
+# Target labels
+ pcl
+# Source files and their labels
+/home/drc/object_detection/vision/CMakeFiles/pcl
+/home/drc/object_detection/vision/CMakeFiles/pcl.rule
+/home/drc/object_detection/vision/CMakeFiles/pcl-complete.rule
+/home/drc/object_detection/vision/src/pcl-stamp/pcl-install.rule
+/home/drc/object_detection/vision/src/pcl-stamp/pcl-mkdir.rule
+/home/drc/object_detection/vision/src/pcl-stamp/pcl-download.rule
+/home/drc/object_detection/vision/src/pcl-stamp/pcl-update.rule
+/home/drc/object_detection/vision/src/pcl-stamp/pcl-patch.rule
+/home/drc/object_detection/vision/src/pcl-stamp/pcl-configure.rule
+/home/drc/object_detection/vision/src/pcl-stamp/pcl-build.rule

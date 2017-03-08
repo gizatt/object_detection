@@ -1,0 +1,51 @@
+
+{
+	"sources" : 
+	[
+		
+		{
+			"file" : "/home/drc/object_detection/vision/CMakeFiles/drake"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/CMakeFiles/drake.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/CMakeFiles/drake-complete.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/src/drake-stamp/drake-install.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/src/drake-stamp/drake-mkdir.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/src/drake-stamp/drake-download.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/src/drake-stamp/drake-update.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/src/drake-stamp/drake-patch.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/src/drake-stamp/drake-configure.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/src/drake-stamp/drake-build.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : [ "drake" ],
+		"name" : "drake"
+	}
+}

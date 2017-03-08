@@ -1,0 +1,13 @@
+# Target labels
+ drake
+# Source files and their labels
+/home/drc/object_detection/vision/CMakeFiles/drake
+/home/drc/object_detection/vision/CMakeFiles/drake.rule
+/home/drc/object_detection/vision/CMakeFiles/drake-complete.rule
+/home/drc/object_detection/vision/src/drake-stamp/drake-install.rule
+/home/drc/object_detection/vision/src/drake-stamp/drake-mkdir.rule
+/home/drc/object_detection/vision/src/drake-stamp/drake-download.rule
+/home/drc/object_detection/vision/src/drake-stamp/drake-update.rule
+/home/drc/object_detection/vision/src/drake-stamp/drake-patch.rule
+/home/drc/object_detection/vision/src/drake-stamp/drake-configure.rule
+/home/drc/object_detection/vision/src/drake-stamp/drake-build.rule

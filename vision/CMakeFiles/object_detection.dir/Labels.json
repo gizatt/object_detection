@@ -1,0 +1,51 @@
+
+{
+	"sources" : 
+	[
+		
+		{
+			"file" : "/home/drc/object_detection/vision/CMakeFiles/object_detection"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/CMakeFiles/object_detection.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/CMakeFiles/object_detection-complete.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/src/object_detection-stamp/object_detection-install.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/src/object_detection-stamp/object_detection-mkdir.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/src/object_detection-stamp/object_detection-download.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/src/object_detection-stamp/object_detection-update.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/src/object_detection-stamp/object_detection-patch.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/src/object_detection-stamp/object_detection-configure.rule"
+		},
+		
+		{
+			"file" : "/home/drc/object_detection/vision/src/object_detection-stamp/object_detection-build.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : [ "object_detection" ],
+		"name" : "object_detection"
+	}
+}

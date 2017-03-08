@@ -1,0 +1,13 @@
+# Target labels
+ object_detection
+# Source files and their labels
+/home/drc/object_detection/vision/CMakeFiles/object_detection
+/home/drc/object_detection/vision/CMakeFiles/object_detection.rule
+/home/drc/object_detection/vision/CMakeFiles/object_detection-complete.rule
+/home/drc/object_detection/vision/src/object_detection-stamp/object_detection-install.rule
+/home/drc/object_detection/vision/src/object_detection-stamp/object_detection-mkdir.rule
+/home/drc/object_detection/vision/src/object_detection-stamp/object_detection-download.rule
+/home/drc/object_detection/vision/src/object_detection-stamp/object_detection-update.rule
+/home/drc/object_detection/vision/src/object_detection-stamp/object_detection-patch.rule
+/home/drc/object_detection/vision/src/object_detection-stamp/object_detection-configure.rule
+/home/drc/object_detection/vision/src/object_detection-stamp/object_detection-build.rule

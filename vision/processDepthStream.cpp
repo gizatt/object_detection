@@ -31,5 +31,22 @@ int main(int argc, char *argv[])
     while(0 == lcm.handle());
 
 
+   //  PointCloudHandler kinectCloudHandler;
+   //   std::cout << argv[1] << std::endl;
+
+   //  if (argc > 1)
+   //  {
+   //      std::string arg1(argv[1]);
+   //      kinectCloudHandler.readModelPCDFile(arg1);
+   //  }
+ 
+   // PointCloud::Ptr cloud =  kinectCloudHandler.getCurrentPointCloud();
+   // pcl::visualization::CloudViewer viewer ("Cloud Viewer");
+   // viewer.showCloud (cloud);
+   // while (!viewer.wasStopped ())
+   // {
+    
+   // }
+
     return 0;
 }

@@ -96,12 +96,12 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
  
  			int PointCloudHandler::savePointCloud(PointCloud::Ptr cloud) {
      			string extension = ".pcd";
-     			string directory = "../RGB-D_TestSet/";
+     			string directory = "../RGB-D_TestSet/pcd_files/";
      			string path = directory +  pcdOutputFile + ".pcd";
      			std::cerr <<  path << std::endl;
 
 
-     			if(pcl::io::savePCDFileASCII (path,  *cloud)){
+     			if(pcl::io::savePCDFileASCII(path,  *cloud)){
         			std::cerr << "Saved " << cloud->points.size () << " data points to " << path << std::endl;
         			return 0;
       			}

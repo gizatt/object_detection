@@ -27,6 +27,8 @@ file(GLOB processDepthStream
     "*.cpp"
 )
 
+
+
 list(REMOVE_ITEM capturePointCloudFrame ${CMAKE_CURRENT_SOURCE_DIR}/processDepthStream.cpp)
 
 list(REMOVE_ITEM processDepthStream ${CMAKE_CURRENT_SOURCE_DIR}/capturePointCloudFrame.cpp)

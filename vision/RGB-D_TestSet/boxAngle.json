@@ -1,0 +1,26 @@
+{
+	"hardware": "kinect",
+	"scene": {
+		"descritiption": "one box in space upper view",
+		"lcm log": "lcm_logs/lcmlog-2017-03-06.00",
+		"point cloud": "pcl_files/boxAngle.pcd",
+		"models": [
+			{
+				"name": "box1",
+				"urdf file": "urdf/cube.urdf",
+				"position": {
+					"x":0,
+					"y":-0.23,
+					"z":0.64,
+				},
+				"orientati on": {
+					"x":1,
+					"y":1,
+					"z":1,
+					"w":1
+				}
+
+			}
+		]
+	}
+}

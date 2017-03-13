@@ -10,9 +10,8 @@
 				"urdf file": "urdf/cube.urdf",
 				"position": {
 					"x":1,
-					"y":1,
-					"z":1,
-					"w":1
+					"y":,
+					"z":.64,
 				},
 				"orientati on": {
 					"x":1,

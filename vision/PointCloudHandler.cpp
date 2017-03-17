@@ -82,6 +82,13 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
                 // viewer.showCloud(pointCloud);
  			}
 
+      void PointCloudHandler::grabOpenNIImage(const PointCloud::Ptr &cloud){
+         if(!received_frame){
+            received_frame = true;
+            savePointCloud(cloud);
+        }
+      }
+
 
 			int PointCloudHandler::readModelPCDFile(string pathToFile){
 				pcl::PointCloud<pcl::PointXYZ>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZ>);
@@ -94,7 +101,7 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
             	currentPointCloud = cloud;
 			}
  
- 			int PointCloudHandler::savePointCloud(PointCloud::Ptr cloud) {
+ 			int PointCloudHandler::savePointCloud(const PointCloud::Ptr cloud) {
      			string extension = ".pcd";
      			string directory = "../RGB-D_TestSet/pcd_files/";
      			string path = directory +  pcdOutputFile + ".pcd";

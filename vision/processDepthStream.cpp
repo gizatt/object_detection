@@ -20,33 +20,33 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 int main(int argc, char *argv[])
 {
 
-    lcm::LCM lcm;
+    // lcm::LCM lcm;
 
-    if(!lcm.good())
-        return 1;
+    // if(!lcm.good())
+    //     return 1;
+    // PointCloudHandler kinectCloudHandler;
+    // lcm.subscribe("DEPTH_IMAGE", &PointCloudHandler::ingestDepthImages, &kinectCloudHandler);
+   	// std::cout << "Starting to listen for depth images" << std::endl;
+
+    // while(0 == lcm.handle());
+
+
     PointCloudHandler kinectCloudHandler;
-    lcm.subscribe("DEPTH_IMAGE", &PointCloudHandler::ingestDepthImages, &kinectCloudHandler);
-   	std::cout << "Starting to listen for depth images" << std::endl;
+     std::cout << argv[1] << std::endl;
 
-    while(0 == lcm.handle());
-
-
-   //  PointCloudHandler kinectCloudHandler;
-   //   std::cout << argv[1] << std::endl;
-
-   //  if (argc > 1)
-   //  {
-   //      std::string arg1(argv[1]);
-   //      kinectCloudHandler.readModelPCDFile(arg1);
-   //  }
+    if (argc > 1)
+    {
+        std::string arg1(argv[1]);
+        kinectCloudHandler.readModelPCDFile(arg1);
+    }
  
-   // PointCloud::Ptr cloud =  kinectCloudHandler.getCurrentPointCloud();
-   // pcl::visualization::CloudViewer viewer ("Cloud Viewer");
-   // viewer.showCloud (cloud);
-   // while (!viewer.wasStopped ())
-   // {
+   PointCloud::Ptr cloud =  kinectCloudHandler.getCurrentPointCloud();
+   pcl::visualization::CloudViewer viewer ("Cloud Viewer");
+   viewer.showCloud (cloud);
+   while (!viewer.wasStopped ())
+   {
     
-   // }
+   }
 
     return 0;
 }

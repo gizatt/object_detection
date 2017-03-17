@@ -38,10 +38,11 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
         const PointCloud::Ptr getCurrentPointCloud();
 
         //io
+        void grabOpenNIImage(const PointCloud::Ptr &cloud);
         void ingestDepthImage(const lcm::ReceiveBuffer* rbuf,const std::string& chan, const kinect::depth_msg_t* depthImage);
         void ingestDepthImages(const lcm::ReceiveBuffer* rbuf, const std::string& chan, const kinect::depth_msg_t* depthImage);
         int readModelPCDFile(string pathToFile);
-        int savePointCloud(PointCloud::Ptr cloud);
+        int savePointCloud(const PointCloud::Ptr cloud);
         void publishPointCloud(PointCloud::Ptr cloud);   
 
   };
